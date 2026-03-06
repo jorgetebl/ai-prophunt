@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI PropHunt — Dashboard</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --blue: #003DA5;
+  --red: #DC0032;
+  --green: #28a745;
+  --orange: #f0ad4e;
+  --gray: #6c757d;
+  --light: #f8f9fa;
+  --border: #dee2e6;
+}
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--light);
+  color: #212529;
+  line-height: 1.5;
+}
+header {
+  background: var(--blue);
+  color: white;
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+header h1 { font-size: 1.25rem; font-weight: 600; }
+header .date { font-size: 0.9rem; opacity: 0.85; }
+.container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+
+/* Summary cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.card {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.card .value { font-size: 2rem; font-weight: 700; }
+.card .label { font-size: 0.8rem; color: var(--gray); text-transform: uppercase; letter-spacing: 0.05em; }
+.card.today .value { color: var(--blue); }
+.card.queue .value { color: var(--orange); }
+.card.sent .value { color: var(--green); }
+.card.failed .value { color: var(--red); }
+
+/* Controls */
+.controls {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+.btn {
+  padding: 0.5rem 1.25rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn:hover { opacity: 0.85; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-run { background: var(--blue); color: white; }
+.btn-pause { background: var(--orange); color: white; }
+.btn-resume { background: var(--green); color: white; }
+.btn-refresh { background: white; color: var(--gray); border: 1px solid var(--border); }
+
+/* Section */
+.section {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.section-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.section-header h2 { font-size: 1rem; font-weight: 600; }
+.filter-tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+.filter-tab {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.filter-tab.active { background: var(--blue); color: white; border-color: var(--blue); }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+th { text-align: left; padding: 0.5rem 1rem; border-bottom: 2px solid var(--border); font-weight: 600; color: var(--gray); font-size: 0.75rem; text-transform: uppercase; }
+td { padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+.status { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 3px; font-size: 0.75rem; font-weight: 500; }
+.status-sent, .status-test { background: #d4edda; color: #155724; }
+.status-failed, .status-skipped_captcha { background: #f8d7da; color: #721c24; }
+.status-skipped_landline, .status-skipped_agency_detected, .status-skipped_agency { background: #fff3cd; color: #856404; }
+.status-pending_schedule { background: #d1ecf1; color: #0c5460; }
+.empty-msg { padding: 2rem; text-align: center; color: var(--gray); }
+
+/* Log viewer */
+.log-viewer {
+  padding: 1rem;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 0.8rem;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #333;
+  background: #fafafa;
+}
+.log-viewer:empty::after { content: 'Sin logs para hoy'; color: var(--gray); }
+
+/* Health bar */
+.health-bar {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.75rem 1rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+.health-item { display: flex; align-items: center; gap: 0.35rem; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-ok { background: var(--green); }
+.dot-fail { background: var(--red); }
+.dot-unknown { background: var(--gray); }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .cards { grid-template-columns: repeat(2, 1fr); }
+  header { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AI PropHunt — Juanan Gomis, REMAX Experience</h1>
+  <span class="date" id="headerDate"></span>
+</header>
+
+<div class="container">
+
+  <!-- Summary cards -->
+  <div class="cards">
+    <div class="card today">
+      <div class="value" id="cardToday">-</div>
+      <div class="label">Hoy</div>
+    </div>
+    <div class="card queue">
+      <div class="value" id="cardQueue">-</div>
+      <div class="label">En cola</div>
+    </div>
+    <div class="card sent">
+      <div class="value" id="cardSent">-</div>
+      <div class="label">Enviados</div>
+    </div>
+    <div class="card failed">
+      <div class="value" id="cardFailed">-</div>
+      <div class="label">Fallidos</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="btn btn-run" id="btnRun" onclick="runBetterplace()">Ejecutar BetterPlace</button>
+    <button class="btn btn-pause" id="btnPause" onclick="togglePause()">Pausar cola</button>
+    <button class="btn btn-refresh" onclick="refreshAll()">Actualizar</button>
+  </div>
+
+  <!-- Contacts table -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Contactos</h2>
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filter="today" onclick="setFilter('today')">Hoy</button>
+        <button class="filter-tab" data-filter="week" onclick="setFilter('week')">Semana</button>
+        <button class="filter-tab" data-filter="all" onclick="setFilter('all')">Todos</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Telefono</th>
+            <th>Zona</th>
+            <th>Portal</th>
+            <th>Precio</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody id="contactsBody">
+          <tr><td colspan="6" class="empty-msg">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Log viewer -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Log de hoy</h2>
+    </div>
+    <div class="log-viewer" id="logViewer"></div>
+  </div>
+
+  <!-- Health check -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Estado del sistema</h2>
+      <button class="btn btn-refresh" onclick="loadHealth()" style="padding:0.25rem 0.75rem;font-size:0.8rem">Comprobar</button>
+    </div>
+    <div class="health-bar" id="healthBar">
+      <span class="health-item"><span class="dot dot-unknown"></span> Cargando...</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = '';
+let currentFilter = 'today';
+let paused = false;
+
+// --- Date helpers ---
+function todayStr() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+}
+function weekAgoStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 7);
+  return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+}
+
+// --- Init ---
+document.getElementById('headerDate').textContent = new Date().toLocaleDateString('es-ES', {
+  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  timeZone: 'Europe/Madrid'
+});
+
+// --- API calls ---
+async function fetchJSON(url) {
+  try {
+    const r = await fetch(API + url);
+    if (!r.ok) return null;
+    return r.json();
+  } catch { return null; }
+}
+
+async function loadStatus() {
+  const data = await fetchJSON('/status');
+  if (!data) return;
+  const max = data.stats?.maxPerDay || 15;
+  const todayCount = data.stats?.todayCount || 0;
+  document.getElementById('cardToday').textContent = todayCount + '/' + max;
+  document.getElementById('cardQueue').textContent = data.queue?.length ?? '-';
+  paused = data.queue?.paused || false;
+  updatePauseBtn();
+}
+
+async function loadContacts() {
+  let url = '/api/contacts';
+  if (currentFilter === 'today') url += '?date=' + todayStr();
+  else if (currentFilter === 'week') url += '?since=' + weekAgoStr();
+
+  const data = await fetchJSON(url);
+  const tbody = document.getElementById('contactsBody');
+
+  if (!data || !data.contacts || data.contacts.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">Sin contactos</td></tr>';
+    updateCardCounts([]);
+    return;
+  }
+
+  const contacts = data.contacts.sort((a, b) =>
+    (b.date_contacted || '').localeCompare(a.date_contacted || '')
+  );
+
+  updateCardCounts(contacts);
+
+  tbody.innerHTML = contacts.map(c => {
+    const date = c.date_contacted ? c.date_contacted.substring(0, 16).replace('T', ' ') : '-';
+    const phone = c.phone || '-';
+    const zone = (c.zone || '-').length > 35 ? (c.zone || '').substring(0, 35) + '...' : (c.zone || '-');
+    const portal = c.portal || '-';
+    const price = c.price ? Number(c.price).toLocaleString('es-ES') + ' \u20ac' : '-';
+    const status = c.status || 'unknown';
+    const statusClass = 'status-' + status.replace(/[^a-z_]/g, '');
+    return '<tr>' +
+      '<td>' + esc(date) + '</td>' +
+      '<td>' + esc(phone) + '</td>' +
+      '<td title="' + esc(c.zone || '') + '">' + esc(zone) + '</td>' +
+      '<td>' + esc(portal) + '</td>' +
+      '<td>' + esc(price) + '</td>' +
+      '<td><span class="status ' + statusClass + '">' + esc(status) + '</span></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function updateCardCounts(contacts) {
+  const sent = contacts.filter(c => c.status === 'sent' || c.status === 'test').length;
+  const failed = contacts.filter(c => c.status && (c.status.startsWith('failed') || c.status.startsWith('skipped'))).length;
+  document.getElementById('cardSent').textContent = sent;
+  document.getElementById('cardFailed').textContent = failed;
+}
+
+async function loadLogs() {
+  const data = await fetchJSON('/api/logs?date=' + todayStr());
+  const viewer = document.getElementById('logViewer');
+  if (data && data.content) {
+    viewer.textContent = data.content;
+    viewer.scrollTop = viewer.scrollHeight;
+  } else {
+    viewer.textContent = '';
+  }
+}
+
+async function loadHealth() {
+  const bar = document.getElementById('healthBar');
+  bar.innerHTML = '<span class="health-item"><span class="dot dot-unknown"></span> Comprobando...</span>';
+  const data = await fetchJSON('/api/healthcheck');
+  if (!data || !data.checks) {
+    bar.innerHTML = '<span class="health-item"><span class="dot dot-fail"></span> Error al comprobar</span>';
+    return;
+  }
+  bar.innerHTML = data.checks.map(ch => {
+    const ok = ch.ok;
+    const cls = ok ? 'dot-ok' : 'dot-fail';
+    return '<span class="health-item"><span class="dot ' + cls + '"></span> ' + esc(ch.name) + '</span>';
+  }).join('');
+}
+
+// --- Actions ---
+async function runBetterplace() {
+  const btn = document.getElementById('btnRun');
+  btn.disabled = true;
+  btn.textContent = 'Lanzando...';
+  try {
+    const r = await fetch(API + '/api/run', { method: 'POST' });
+    const data = await r.json();
+    if (data.pid) {
+      btn.textContent = 'Lanzado (PID ' + data.pid + ')';
+    } else {
+      btn.textContent = data.error || 'Error';
+    }
+  } catch {
+    btn.textContent = 'Error de conexion';
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = 'Ejecutar BetterPlace'; }, 5000);
+}
+
+async function togglePause() {
+  const endpoint = paused ? '/resume' : '/pause';
+  await fetch(API + endpoint, { method: 'POST' });
+  paused = !paused;
+  updatePauseBtn();
+}
+
+function updatePauseBtn() {
+  const btn = document.getElementById('btnPause');
+  if (paused) {
+    btn.textContent = 'Reanudar cola';
+    btn.className = 'btn btn-resume';
+  } else {
+    btn.textContent = 'Pausar cola';
+    btn.className = 'btn btn-pause';
+  }
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.filter === f);
+  });
+  loadContacts();
+}
+
+function refreshAll() {
+  loadStatus();
+  loadContacts();
+  loadLogs();
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// --- Initial load + auto-refresh ---
+refreshAll();
+loadHealth();
+setInterval(refreshAll, 30000);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,10 @@
+node_modules/
+.env
+.DS_Store
+
+# Datos locales del usuario (no sobreescribir con updates)
+data/contacted.json
+data/logs/
+
+# Config local (cada equipo tiene su propia config)
+config.json

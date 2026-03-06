@@ -1,0 +1,19 @@
+{
+  "name": "ai-prophunt",
+  "version": "1.0.0",
+  "description": "Captación inmobiliaria automatizada via API Idealista",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dry-run": "node src/index.js --dry-run",
+    "test-auth": "node src/auth.js",
+    "test-search": "node src/search.js",
+    "server": "node src/server.js",
+    "server:dry": "node src/server.js --dry-run",
+    "dashboard": "node src/server.js --dashboard",
+    "dashboard:dry": "node src/server.js --dashboard --dry-run"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
+}

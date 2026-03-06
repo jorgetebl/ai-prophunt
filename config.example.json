@@ -1,0 +1,33 @@
+{
+  "agent": {
+    "name": "Juanan Gomis",
+    "company": "REMAX Experience",
+    "role": "Agente API profesional",
+    "phone": "",
+    "whatsapp_jid": ""
+  },
+  "idealista": {
+    "locationId": "0-EU-ES-28",
+    "operation": "sale",
+    "propertyType": "homes",
+    "sinceDate": "Y",
+    "maxItems": 50,
+    "maxRequestsPerMonth": 100,
+    "maxRequestsPerDay": 4
+  },
+  "filters": {
+    "only_particulares": true,
+    "valid_phone_prefixes": ["6", "7"],
+    "max_contacts_per_day": 15,
+    "min_delay_between_messages_seconds": 120
+  },
+  "schedule": {
+    "wake_time": "08:50",
+    "run_time": "09:00",
+    "timezone": "Europe/Madrid",
+    "working_days": [1, 2, 3, 4, 5]
+  },
+  "server": {
+    "port": 3456
+  }
+}
