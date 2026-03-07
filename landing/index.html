@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI PropHunt — Captacion inmobiliaria con IA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: #1a1a2e;
+  background: #0f0f1a;
+}
+
+/* ── Full-screen split layout ── */
+.page {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Left: hero image */
+.hero {
+  flex: 1.1;
+  position: relative;
+  background: url('realestate.webp') center/cover no-repeat;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 3rem;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(10,10,30,0.85) 0%, rgba(10,10,30,0.3) 50%, rgba(10,10,30,0.15) 100%);
+}
+.hero-content {
+  position: relative;
+  z-index: 1;
+  color: white;
+}
+.hero-content .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.hero-content .brand-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.remax-badge {
+  background: #DC0032;
+  color: white;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.hero-content h2 {
+  font-size: 2.4rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  margin-bottom: 1rem;
+  max-width: 500px;
+}
+.hero-content p {
+  font-size: 1.05rem;
+  color: rgba(255,255,255,0.75);
+  line-height: 1.6;
+  max-width: 440px;
+  margin-bottom: 2rem;
+}
+.features-row {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+.feature {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.7);
+}
+.feature-icon {
+  width: 32px;
+  height: 32px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+/* Right: form panel */
+.panel {
+  width: 480px;
+  flex-shrink: 0;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3rem 2.5rem;
+  overflow-y: auto;
+}
+.panel-inner {
+  max-width: 360px;
+  width: 100%;
+  margin: 0 auto;
+}
+.panel h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.3rem;
+}
+.panel .sub {
+  color: #888;
+  font-size: 0.9rem;
+  margin-bottom: 2rem;
+}
+
+/* Tabs */
+.tabs { display: flex; gap: 0; margin-bottom: 1.75rem; border-bottom: 1px solid #eee; }
+.tab {
+  flex: 1;
+  padding: 0.7rem 0;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #aaa;
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.2s;
+}
+.tab:hover { color: #555; }
+.tab.active { color: #1a1a2e; border-bottom-color: #DC0032; }
+
+/* Form */
+.form-group { margin-bottom: 1rem; }
+.form-group label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #666;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.form-group input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: #fafafa;
+}
+.form-group input:focus {
+  outline: none;
+  border-color: #1a1a2e;
+  box-shadow: 0 0 0 3px rgba(26,26,46,0.08);
+  background: white;
+}
+.btn-primary {
+  display: block;
+  width: 100%;
+  background: #1a1a2e;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 0.85rem;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  margin-top: 0.75rem;
+}
+.btn-primary:hover { background: #2d2d4a; }
+.btn-primary:active { transform: scale(0.99); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.error-msg {
+  background: #fff0f0;
+  color: #c0392b;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  display: none;
+  border: 1px solid #fdd;
+}
+.success-msg {
+  background: #f0fff4;
+  color: #27ae60;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  display: none;
+  border: 1px solid #c3e6cb;
+}
+
+/* Closed registration */
+.closed-box {
+  text-align: center;
+  padding: 2rem 0;
+  display: none;
+}
+.closed-box p {
+  font-size: 0.95rem;
+  color: #666;
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+.btn-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #25D366;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 0.85rem 2rem;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.btn-whatsapp:hover { background: #1ebe57; }
+.btn-whatsapp svg { width: 20px; height: 20px; fill: white; }
+
+/* Post-register setup screen */
+.setup-box {
+  display: none;
+  text-align: center;
+}
+.setup-box .check-circle {
+  width: 56px;
+  height: 56px;
+  background: #f0fff4;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.25rem;
+  font-size: 1.5rem;
+}
+.setup-box h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.setup-box .sub {
+  color: #888;
+  font-size: 0.88rem;
+  margin-bottom: 1.75rem;
+}
+.setup-steps {
+  text-align: left;
+  margin-bottom: 1.75rem;
+}
+.setup-step {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid #f0f0f0;
+  align-items: flex-start;
+}
+.setup-step:last-child { border-bottom: none; }
+.step-num {
+  width: 28px;
+  height: 28px;
+  background: #1a1a2e;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.step-text { font-size: 0.88rem; color: #444; line-height: 1.45; }
+.step-text strong { color: #1a1a2e; }
+.btn-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #1a1a2e;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 0.85rem 2rem;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s;
+  margin-bottom: 1rem;
+}
+.btn-download:hover { background: #2d2d4a; }
+.btn-download svg { width: 18px; height: 18px; fill: white; }
+.btn-secondary {
+  display: inline-block;
+  color: #888;
+  font-size: 0.85rem;
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0.5rem 1rem;
+}
+.btn-secondary:hover { color: #1a1a2e; }
+.install-cmd {
+  background: #1a1a2e;
+  color: #ccc;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  overflow-x: auto;
+  text-align: left;
+  margin-top: 0.75rem;
+  position: relative;
+  word-break: break-all;
+}
+.copy-btn {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  background: rgba(255,255,255,0.1);
+  color: #999;
+  border: none;
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.65rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.copy-btn:hover { color: white; }
+.or-divider {
+  font-size: 0.78rem;
+  color: #bbb;
+  margin: 0.75rem 0;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .page { flex-direction: column; }
+  .hero {
+    min-height: 45vh;
+    padding: 2rem 1.5rem;
+  }
+  .hero-content h2 { font-size: 1.8rem; }
+  .panel {
+    width: 100%;
+    padding: 2rem 1.5rem;
+  }
+  .features-row { gap: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="page">
+  <!-- Left: Hero -->
+  <div class="hero">
+    <div class="hero-content">
+      <div class="brand">
+        <span class="brand-name">AI PropHunt</span>
+        <span class="remax-badge">REMAX</span>
+      </div>
+      <h2>Capta inmuebles de particulares mientras duermes</h2>
+      <p>Detecta propiedades en portales, extrae el contacto del vendedor y envia un WhatsApp personalizado. Todo automatico, cada dia.</p>
+      <div class="features-row">
+        <div class="feature">
+          <div class="feature-icon">&#x1F50D;</div>
+          <span>Escaneo diario de portales</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#x1F4F1;</div>
+          <span>WhatsApp automatico</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#x1F4CA;</div>
+          <span>Dashboard en tiempo real</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Form panel -->
+  <div class="panel">
+    <div class="panel-inner">
+      <h1>Empieza gratis</h1>
+      <p class="sub">Crea tu cuenta y conecta tu captacion en minutos</p>
+
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('register')">Registrarse</button>
+        <button class="tab" onclick="showTab('login')">Iniciar sesion</button>
+      </div>
+
+      <div id="errorMsg" class="error-msg"></div>
+      <div id="successMsg" class="success-msg"></div>
+
+      <!-- Registration form -->
+      <form id="registerForm" onsubmit="handleRegister(event)">
+        <div class="form-group">
+          <label for="regEmail">Email</label>
+          <input type="email" id="regEmail" required placeholder="tu@email.com">
+        </div>
+        <div class="form-group">
+          <label for="regPassword">Contrasena</label>
+          <input type="password" id="regPassword" required minlength="6" placeholder="Minimo 6 caracteres">
+        </div>
+        <div class="form-group">
+          <label for="regPasswordConfirm">Confirmar contrasena</label>
+          <input type="password" id="regPasswordConfirm" required minlength="6" placeholder="Repite la contrasena">
+        </div>
+        <button type="submit" class="btn-primary" id="btnRegister">Crear cuenta</button>
+      </form>
+
+      <!-- Login form -->
+      <form id="loginForm" style="display:none" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="loginEmail">Email</label>
+          <input type="email" id="loginEmail" required placeholder="tu@email.com">
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">Contrasena</label>
+          <input type="password" id="loginPassword" required placeholder="Tu contrasena">
+        </div>
+        <button type="submit" class="btn-primary" id="btnLogin">Entrar</button>
+      </form>
+
+      <!-- Closed registration -->
+      <div id="closedBox" class="closed-box">
+        <p>El registro esta cerrado por el momento.<br>Contacta con el founder para activar tu cuenta:</p>
+        <a class="btn-whatsapp" href="https://wa.me/34619458478?text=Hola%20Jorge%2C%20quiero%20activar%20mi%20cuenta%20de%20AI%20PropHunt" target="_blank">
+          <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Contactar por WhatsApp
+        </a>
+      </div>
+
+      <!-- Post-register setup -->
+      <div id="setupBox" class="setup-box">
+        <div class="check-circle">&#x2705;</div>
+        <h2>Cuenta creada</h2>
+        <p class="sub">Confirma tu email y luego instala el software en tu Mac</p>
+
+        <div class="setup-steps">
+          <div class="setup-step">
+            <div class="step-num">1</div>
+            <div class="step-text"><strong>Confirma tu email</strong> — Revisa tu bandeja de entrada y haz click en el enlace de verificacion</div>
+          </div>
+          <div class="setup-step">
+            <div class="step-num">2</div>
+            <div class="step-text"><strong>Instala en tu Mac</strong> — Descarga el instalador o copia el comando de abajo</div>
+          </div>
+          <div class="setup-step">
+            <div class="step-num">3</div>
+            <div class="step-text"><strong>Abre el dashboard</strong> — Inicia sesion para ver tus contactos y logs</div>
+          </div>
+        </div>
+
+        <a class="btn-download" href="install-prophunt.command" download>
+          <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Descargar instalador (macOS)
+        </a>
+
+        <div class="or-divider">o copia este comando en Terminal</div>
+        <div class="install-cmd">
+          <code id="cmd">curl -sL https://gist.githubusercontent.com/jorgetebl/09e242a919ca0356b957760679edb51c/raw/prophunt-install.sh | bash</code>
+          <button class="copy-btn" onclick="copyCmd()">copiar</button>
+        </div>
+
+        <div style="margin-top:1.5rem">
+          <a href="dashboard.html" class="btn-secondary">Ir al dashboard &#x2192;</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://uolymolzgesvxucmbcgw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvbHltb2x6Z2Vzdnh1Y21iY2d3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NDcwMzgsImV4cCI6MjA4ODQyMzAzOH0.kQfyigV6A6MgnMk2oZaRhCcCla3VcAk2zhtPkFfe9Gc';
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function showTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.tab:nth-child(${tab === 'register' ? 1 : 2})`).classList.add('active');
+  document.getElementById('registerForm').style.display = tab === 'register' ? '' : 'none';
+  document.getElementById('loginForm').style.display = tab === 'login' ? '' : 'none';
+  document.getElementById('closedBox').style.display = 'none';
+  document.getElementById('setupBox').style.display = 'none';
+  hideMessages();
+}
+
+function hideMessages() {
+  document.getElementById('errorMsg').style.display = 'none';
+  document.getElementById('successMsg').style.display = 'none';
+}
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('successMsg').style.display = 'none';
+}
+function showSuccess(msg) {
+  const el = document.getElementById('successMsg');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('errorMsg').style.display = 'none';
+}
+
+async function handleRegister(e) {
+  e.preventDefault(); hideMessages();
+  const email = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const confirm = document.getElementById('regPasswordConfirm').value;
+  const btn = document.getElementById('btnRegister');
+
+  if (password !== confirm) { showError('Las contrasenas no coinciden'); return; }
+
+  btn.disabled = true; btn.textContent = 'Comprobando...';
+  try {
+    const { data: isOpen, error: rpcError } = await sb.rpc('is_registration_open');
+    if (rpcError) throw new Error(rpcError.message);
+    if (!isOpen) {
+      document.getElementById('registerForm').style.display = 'none';
+      document.getElementById('closedBox').style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Crear cuenta'; return;
+    }
+    const { data, error } = await sb.auth.signUp({ email, password });
+    if (error) throw new Error(error.message);
+    if (data.user) {
+      await sb.from('configs').insert({ user_id: data.user.id, max_contacts_per_day: 15, min_delay_minutes: 2 });
+      // Show setup screen instead of redirecting
+      document.getElementById('registerForm').style.display = 'none';
+      document.getElementById('loginForm').style.display = 'none';
+      document.querySelector('.tabs').style.display = 'none';
+      document.querySelector('.panel-inner > h1').style.display = 'none';
+      document.querySelector('.panel-inner > .sub').style.display = 'none';
+      document.getElementById('setupBox').style.display = 'block';
+    }
+  } catch (err) { showError(err.message); }
+  btn.disabled = false; btn.textContent = 'Crear cuenta';
+}
+
+async function handleLogin(e) {
+  e.preventDefault(); hideMessages();
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const btn = document.getElementById('btnLogin');
+  btn.disabled = true; btn.textContent = 'Entrando...';
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+    showSuccess('Login correcto. Redirigiendo...');
+    setTimeout(() => { window.location.href = 'dashboard.html'; }, 1000);
+  } catch (err) { showError(err.message); }
+  btn.disabled = false; btn.textContent = 'Entrar';
+}
+
+function copyCmd() {
+  navigator.clipboard.writeText(document.getElementById('cmd').textContent).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.textContent = 'copiado!'; setTimeout(() => btn.textContent = 'copiar', 2000);
+  });
+}
+
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) window.location.href = 'dashboard.html';
+})();
+</script>
+</body>
+</html>

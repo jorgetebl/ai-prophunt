@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { log } from './logger.js';
 import { loadContacted, CONTACTED_PATH } from './filter.js';
 import { buildMessage } from './message.js';
+import { isConfigured, getUserId, addContact, contactExists, getTodayCount } from './supabase.js';
 
 const TICK_INTERVAL_MS = 10_000;
 
@@ -24,12 +25,19 @@ export function createQueue(config, { dryRun = false } = {}) {
   const minDelay = (config.filters?.min_delay_between_messages_seconds ?? 120) * 1000;
   const maxPerDay = config.filters?.max_contacts_per_day ?? 15;
 
-  function getTodayCount() {
+  function getTodayCountSync() {
     const contacted = loadContacted();
     const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
     return contacted.contacts.filter(c =>
       c.date_contacted && c.date_contacted.startsWith(today)
     ).length;
+  }
+
+  async function getTodayCountAsync() {
+    if (isConfigured()) {
+      return await getTodayCount(await getUserId());
+    }
+    return getTodayCountSync();
   }
 
   function isWithinSchedule() {
@@ -42,7 +50,12 @@ export function createQueue(config, { dryRun = false } = {}) {
     return (t >= 540 && t < 840) || (t >= 960 && t < 1200);
   }
 
-  function isDuplicate(contact) {
+  async function isDuplicate(contact) {
+    if (isConfigured()) {
+      const phone = `34${contact.phone}`;
+      return await contactExists(await getUserId(), phone, contact.url);
+    }
+    // JSON fallback
     const contacted = loadContacted();
     const knownPhones = new Set(contacted.contacts.map(c => c.phone));
     const knownUrls = new Set(contacted.contacts.map(c => c.url));
@@ -51,9 +64,8 @@ export function createQueue(config, { dryRun = false } = {}) {
     return false;
   }
 
-  function saveContact(contact, status, messagePreview) {
-    const contacted = loadContacted();
-    contacted.contacts.push({
+  async function saveContact(contact, status, messagePreview) {
+    const contactData = {
       phone: `34${contact.phone}`,
       name: contact.name || '',
       url: contact.url,
@@ -64,7 +76,16 @@ export function createQueue(config, { dryRun = false } = {}) {
       date_contacted: new Date().toISOString(),
       status,
       message_preview: messagePreview.slice(0, 80),
-    });
+    };
+
+    // Write to Supabase
+    if (isConfigured()) {
+      await addContact(await getUserId(), contactData);
+    }
+
+    // Always write to JSON file too (local backup)
+    const contacted = loadContacted();
+    contacted.contacts.push(contactData);
     writeFileSync(CONTACTED_PATH, JSON.stringify(contacted, null, 2) + '\n');
   }
 
@@ -89,7 +110,7 @@ export function createQueue(config, { dryRun = false } = {}) {
 
     try {
       // Double-check duplicate
-      if (isDuplicate(contact)) {
+      if (await isDuplicate(contact)) {
         log(`Queue: ${contact.phone} is duplicate, skipping`);
         processing = false;
         return;
@@ -99,30 +120,31 @@ export function createQueue(config, { dryRun = false } = {}) {
 
       if (dryRun) {
         log(`Queue [DRY RUN]: would send to 34${contact.phone}`);
-        saveContact(contact, 'dry_run', message);
+        await saveContact(contact, 'dry_run', message);
       } else {
         await sendViaWacli(contact.phone, message);
         log(`Queue: sent to 34${contact.phone}`);
-        saveContact(contact, 'sent', message);
+        await saveContact(contact, 'sent', message);
       }
 
       lastSendTime = Date.now();
     } catch (err) {
       log(`Queue: failed to send to 34${contact.phone} — ${err.message}`);
-      saveContact(contact, 'failed', err.message);
+      await saveContact(contact, 'failed', err.message);
     }
 
     processing = false;
   }
 
-  function tick() {
+  async function tick() {
     if (paused || processing || items.length === 0 || shuttingDown) return;
 
     if (!isWithinSchedule()) {
       return; // Outside working hours
     }
 
-    if (getTodayCount() >= maxPerDay) {
+    const todayCount = await getTodayCountAsync();
+    if (todayCount >= maxPerDay) {
       log('Queue: daily limit reached, pausing until tomorrow');
       return;
     }
@@ -151,7 +173,7 @@ export function createQueue(config, { dryRun = false } = {}) {
         paused,
         shuttingDown,
         lastSendTime: lastSendTime ? new Date(lastSendTime).toISOString() : null,
-        todayCount: getTodayCount(),
+        todayCount: getTodayCountSync(),
         maxPerDay,
         dryRun,
         withinSchedule: isWithinSchedule(),

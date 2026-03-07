@@ -1,12 +1,10 @@
-import { config as loadEnv } from 'dotenv';
+import 'dotenv/config';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { log } from './logger.js';
 import { getToken } from './auth.js';
 import { searchProperties, getRequestsAvailableToday } from './search.js';
 import { filterParticulares, deduplicateContacts, getTodayContactCount } from './filter.js';
-
-loadEnv();
 
 const CONFIG_PATH = join(import.meta.dirname, '..', 'config.json');
 const PENDING_PATH = join(import.meta.dirname, '..', 'data', 'pending.json');
@@ -36,7 +34,7 @@ async function main() {
 
   // 2. Check daily contact limit
   const maxPerDay = config.filters?.max_contacts_per_day || 15;
-  const todayCount = getTodayContactCount();
+  const todayCount = await getTodayContactCount();
   if (todayCount >= maxPerDay) {
     log(`Daily limit reached (${todayCount}/${maxPerDay}), exiting`);
     process.exit(0);
@@ -70,7 +68,7 @@ async function main() {
   const particulares = filterParticulares(elements);
 
   // 7. Deduplicate against contacted.json
-  const { unique, duplicates } = deduplicateContacts(particulares);
+  const { unique, duplicates } = await deduplicateContacts(particulares);
 
   // 8. Build pending list (limit to slots available today)
   const pending = unique.slice(0, slotsLeft).map(el => ({

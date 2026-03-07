@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
 import { readFileSync, existsSync } from 'node:fs';
@@ -5,8 +6,9 @@ import { join, extname } from 'node:path';
 import { execSync, spawn } from 'node:child_process';
 import { log } from './logger.js';
 import { normalizePhone, isValidMobile } from './phone.js';
-import { loadContacted } from './filter.js';
+import { loadContacted, getTodayContactCount } from './filter.js';
 import { createQueue } from './queue.js';
+import { isConfigured, getUserId, getContacts, getLogs as sbGetLogs, getConfig as sbGetConfig, init as initSupabase } from './supabase.js';
 
 const CONFIG_PATH = join(import.meta.dirname, '..', 'config.json');
 const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
@@ -53,12 +55,8 @@ function readBody(req) {
   });
 }
 
-function getTodayCount() {
-  const contacted = loadContacted();
-  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
-  return contacted.contacts.filter(c =>
-    c.date_contacted && c.date_contacted.startsWith(today)
-  ).length;
+async function getTodayCount() {
+  return await getTodayContactCount();
 }
 
 function isInQueue(phone, url) {
@@ -111,7 +109,7 @@ async function handleContact(req, res) {
     return json(res, 409, { error: 'Contact already in queue' });
   }
 
-  const todayCount = getTodayCount() + queue.getState().queueLength;
+  const todayCount = (await getTodayCount()) + queue.getState().queueLength;
   if (todayCount >= maxPerDay) {
     return json(res, 429, { error: `Daily limit reached (${maxPerDay})` });
   }
@@ -135,8 +133,9 @@ async function handleContact(req, res) {
   json(res, 202, { status: 'queued', position, estimatedSendTime });
 }
 
-function handleStatus(_req, res) {
+async function handleStatus(_req, res) {
   const state = queue.getState();
+  const todayCount = await getTodayCount();
   json(res, 200, {
     ok: true,
     dryRun,
@@ -149,7 +148,7 @@ function handleStatus(_req, res) {
       withinWorkingHours: state.withinSchedule,
     },
     stats: {
-      todayCount: state.todayCount,
+      todayCount,
       maxPerDay: state.maxPerDay,
       lastSendTime: state.lastSendTime,
     },
@@ -211,11 +210,18 @@ function serveStatic(filePath, res) {
   }
 }
 
-function handleApiContacts(req, res) {
+async function handleApiContacts(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const dateParam = url.searchParams.get('date');
   const sinceParam = url.searchParams.get('since');
 
+  if (isConfigured()) {
+    const userId = await getUserId();
+    const contacts = await getContacts(userId, { date: dateParam, since: sinceParam });
+    return json(res, 200, { contacts });
+  }
+
+  // JSON fallback
   const contacted = loadContacted();
   let contacts = contacted.contacts || [];
 
@@ -228,11 +234,19 @@ function handleApiContacts(req, res) {
   json(res, 200, { contacts });
 }
 
-function handleApiLogs(req, res) {
+async function handleApiLogs(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const date = url.searchParams.get('date') || new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
-  const logPath = join(PROJECT_ROOT, 'data', 'logs', `${date}.log`);
 
+  if (isConfigured()) {
+    const userId = await getUserId();
+    const logs = await sbGetLogs(userId, date);
+    const content = logs.map(l => l.message).join('\n');
+    return json(res, 200, { date, content });
+  }
+
+  // File fallback
+  const logPath = join(PROJECT_ROOT, 'data', 'logs', `${date}.log`);
   if (!existsSync(logPath)) {
     return json(res, 200, { date, content: '' });
   }
@@ -244,7 +258,24 @@ function handleApiLogs(req, res) {
   }
 }
 
-function handleApiConfig(_req, res) {
+async function handleApiConfig(_req, res) {
+  if (isConfigured()) {
+    const userId = await getUserId();
+    const sbConfig = await sbGetConfig(userId);
+    if (sbConfig) {
+      return json(res, 200, {
+        agent: { name: config.agent?.name, company: config.agent?.company, role: config.agent?.role },
+        filters: {
+          max_contacts_per_day: sbConfig.max_contacts_per_day,
+          min_delay_between_messages_seconds: sbConfig.min_delay_minutes * 60,
+        },
+        schedule: sbConfig.schedule,
+        server: config.server,
+      });
+    }
+  }
+
+  // File fallback
   const safe = {
     agent: { name: config.agent?.name, company: config.agent?.company, role: config.agent?.role },
     filters: config.filters,
@@ -382,6 +413,19 @@ async function start() {
   if (inUse) {
     log(`Server: port ${PORT} already in use — another instance running. Exiting.`);
     process.exit(0);
+  }
+
+  // Resolve Supabase user before starting
+  if (isConfigured()) {
+    const ready = await initSupabase();
+    if (ready) {
+      const uid = await getUserId();
+      log(`Server: Supabase connected (user: ${uid})`);
+    } else {
+      log('Server: Supabase configured but could not resolve user — using local JSON files');
+    }
+  } else {
+    log('Server: Supabase not configured, using local JSON files');
   }
 
   server.listen(PORT, '127.0.0.1', () => {

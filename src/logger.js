@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { isConfigured, getUserId, addLog } from './supabase.js';
 
 const DATA_DIR = join(import.meta.dirname, '..', 'data', 'logs');
 
@@ -21,6 +22,11 @@ export function log(message) {
   const line = `${timestamp()} - ${message}`;
   console.log(line);
   appendFileSync(getLogPath(), line + '\n');
+
+  // Dual write to Supabase (fire-and-forget)
+  if (isConfigured()) {
+    getUserId().then(uid => { if (uid) addLog(uid, line).catch(() => {}); });
+  }
 }
 
 export function logSummary(stats) {

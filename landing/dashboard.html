@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI PropHunt — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --dark: #1a1a2e;
+  --accent: #DC0032;
+  --green: #10b981;
+  --orange: #f59e0b;
+  --red: #ef4444;
+  --gray: #6b7280;
+  --light: #f9fafb;
+  --border: #e5e7eb;
+  --card: #ffffff;
+}
+html, body { height: 100%; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--light);
+  color: var(--dark);
+  line-height: 1.5;
+}
+
+/* ── Login overlay ── */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+}
+.login-bg {
+  flex: 1;
+  background: url('realestate.webp') center/cover no-repeat;
+  position: relative;
+}
+.login-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(10,10,30,0.7), rgba(10,10,30,0.4));
+}
+.login-bg-content {
+  position: relative;
+  z-index: 1;
+  padding: 3rem;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100%;
+}
+.login-bg-content h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+}
+.login-bg-content p { color: rgba(255,255,255,0.7); font-size: 1rem; }
+
+.login-panel {
+  width: 440px;
+  flex-shrink: 0;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem;
+}
+.login-card {
+  max-width: 340px;
+  width: 100%;
+}
+.login-card .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 2rem;
+}
+.login-card .brand-name { font-size: 1.3rem; font-weight: 700; color: var(--dark); }
+.remax-badge {
+  background: var(--accent);
+  color: white;
+  font-size: 0.55rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.login-card h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem; }
+.login-card .sub { color: var(--gray); font-size: 0.88rem; margin-bottom: 1.75rem; }
+.login-card .form-group { margin-bottom: 1rem; }
+.login-card label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #666;
+  margin-bottom: 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.login-card input {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: #fafafa;
+  transition: all 0.2s;
+}
+.login-card input:focus {
+  outline: none;
+  border-color: var(--dark);
+  box-shadow: 0 0 0 3px rgba(26,26,46,0.08);
+  background: white;
+}
+.login-card .btn {
+  display: block;
+  width: 100%;
+  background: var(--dark);
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 0.8rem;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  transition: background 0.2s;
+}
+.login-card .btn:hover { background: #2d2d4a; }
+.login-card .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-card .error {
+  background: #fff0f0;
+  color: #c0392b;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  display: none;
+  border: 1px solid #fdd;
+}
+.login-card .register-link { margin-top: 1.25rem; font-size: 0.85rem; color: var(--gray); text-align: center; }
+.login-card .register-link a { color: var(--accent); text-decoration: none; font-weight: 500; }
+
+/* ── Dashboard ── */
+.dashboard { display: none; min-height: 100vh; }
+
+/* Sidebar */
+.layout { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 240px;
+  background: var(--dark);
+  color: white;
+  padding: 1.5rem 0;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 1.25rem;
+  margin-bottom: 2rem;
+}
+.sidebar .brand-name { font-size: 1.1rem; font-weight: 700; }
+.sidebar nav { flex: 1; }
+.sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1.25rem;
+  color: rgba(255,255,255,0.55);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 500;
+  transition: all 0.15s;
+  border-left: 3px solid transparent;
+}
+.sidebar nav a:hover { color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.05); }
+.sidebar nav a.active {
+  color: white;
+  background: rgba(255,255,255,0.08);
+  border-left-color: var(--accent);
+}
+.sidebar nav a .icon { font-size: 1rem; width: 20px; text-align: center; }
+.sidebar-footer {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+.sidebar-footer .user-email {
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.5);
+  display: block;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.btn-logout {
+  background: none;
+  color: rgba(255,255,255,0.5);
+  border: none;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.btn-logout:hover { color: white; }
+
+/* Main content */
+.main {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+}
+.main-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.75rem;
+}
+.main-header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+.main-header .date { color: var(--gray); font-size: 0.88rem; }
+.btn-refresh {
+  background: white;
+  color: var(--gray);
+  border: 1px solid var(--border);
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-refresh:hover { border-color: #ccc; color: var(--dark); }
+
+/* Summary cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+.card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+}
+.card .label {
+  font-size: 0.75rem;
+  color: var(--gray);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+.card .value { font-size: 2rem; font-weight: 700; }
+.card.today .value { color: var(--dark); }
+.card.total .value { color: #6366f1; }
+.card.sent .value { color: var(--green); }
+.card.failed .value { color: var(--red); }
+
+/* Section */
+.section {
+  background: var(--card);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+.section-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.section-header h2 { font-size: 0.95rem; font-weight: 600; }
+.filter-tabs { display: flex; gap: 0.25rem; }
+.filter-tab {
+  padding: 0.3rem 0.85rem;
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--gray);
+  transition: all 0.15s;
+}
+.filter-tab:hover { border-color: #ccc; }
+.filter-tab.active {
+  background: var(--dark);
+  color: white;
+  border-color: var(--dark);
+}
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+th {
+  text-align: left;
+  padding: 0.6rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  color: var(--gray);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+td { padding: 0.7rem 1.25rem; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f9fafb; }
+.status {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.status-sent, .status-test { background: #ecfdf5; color: #059669; }
+.status-dry_run { background: #eff6ff; color: #3b82f6; }
+.status-failed { background: #fef2f2; color: #dc2626; }
+.empty-msg { padding: 2.5rem; text-align: center; color: var(--gray); font-size: 0.9rem; }
+
+/* Log viewer */
+.log-viewer {
+  padding: 1.25rem;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 0.78rem;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #444;
+  background: #fafafa;
+  border-radius: 0 0 12px 12px;
+}
+.log-viewer:empty::after { content: 'Sin logs para hoy'; color: var(--gray); }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .login-overlay { flex-direction: column; }
+  .login-bg { min-height: 30vh; flex: none; }
+  .login-panel { width: 100%; }
+  .sidebar { display: none; }
+  .cards { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 500px) {
+  .cards { grid-template-columns: 1fr 1fr; }
+  .main { padding: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Login overlay ── -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-bg">
+    <div class="login-bg-content">
+      <h2>Tu captacion inmobiliaria, automatizada</h2>
+      <p>Accede a tu dashboard para ver contactos, logs y estado del sistema.</p>
+    </div>
+  </div>
+  <div class="login-panel">
+    <div class="login-card">
+      <div class="brand">
+        <span class="brand-name">AI PropHunt</span>
+        <span class="remax-badge">REMAX</span>
+      </div>
+      <h1>Bienvenido</h1>
+      <p class="sub">Inicia sesion para continuar</p>
+      <div class="error" id="loginError"></div>
+      <form onsubmit="doLogin(event)">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" required placeholder="tu@email.com">
+        </div>
+        <div class="form-group">
+          <label for="password">Contrasena</label>
+          <input type="password" id="password" required placeholder="Tu contrasena">
+        </div>
+        <button type="submit" class="btn" id="btnLogin">Entrar</button>
+      </form>
+      <p class="register-link">No tienes cuenta? <a href="index.html">Registrate</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Dashboard ── -->
+<div class="dashboard" id="dashboard">
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-name">AI PropHunt</span>
+      <span class="remax-badge">RE</span>
+    </div>
+    <nav>
+      <a href="#" class="active"><span class="icon">&#x1F4CA;</span> Dashboard</a>
+      <a href="#contacts-section" onclick="setFilter('all')"><span class="icon">&#x1F4CB;</span> Contactos</a>
+      <a href="#logs-section"><span class="icon">&#x1F4DD;</span> Logs</a>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="user-email" id="userEmail"></span>
+      <button class="btn-logout" onclick="doLogout()">Cerrar sesion</button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="main-header">
+      <div>
+        <h1>Dashboard</h1>
+        <span class="date" id="headerDate"></span>
+      </div>
+      <button class="btn-refresh" onclick="refreshAll()">Actualizar</button>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="cards">
+      <div class="card today">
+        <div class="label">Contactos hoy</div>
+        <div class="value" id="cardToday">-</div>
+      </div>
+      <div class="card total">
+        <div class="label">Total</div>
+        <div class="value" id="cardTotal">-</div>
+      </div>
+      <div class="card sent">
+        <div class="label">Enviados</div>
+        <div class="value" id="cardSent">-</div>
+      </div>
+      <div class="card failed">
+        <div class="label">Fallidos</div>
+        <div class="value" id="cardFailed">-</div>
+      </div>
+    </div>
+
+    <!-- Contacts table -->
+    <div class="section" id="contacts-section">
+      <div class="section-header">
+        <h2>Contactos</h2>
+        <div class="filter-tabs">
+          <button class="filter-tab active" data-filter="today" onclick="setFilter('today')">Hoy</button>
+          <button class="filter-tab" data-filter="week" onclick="setFilter('week')">Semana</button>
+          <button class="filter-tab" data-filter="all" onclick="setFilter('all')">Todos</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Telefono</th>
+              <th>Zona</th>
+              <th>Portal</th>
+              <th>Precio</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="contactsBody">
+            <tr><td colspan="6" class="empty-msg">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="section" id="logs-section">
+      <div class="section-header">
+        <h2>Log de hoy</h2>
+      </div>
+      <div class="log-viewer" id="logViewer"></div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://uolymolzgesvxucmbcgw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvbHltb2x6Z2Vzdnh1Y21iY2d3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NDcwMzgsImV4cCI6MjA4ODQyMzAzOH0.kQfyigV6A6MgnMk2oZaRhCcCla3VcAk2zhtPkFfe9Gc';
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let currentUser = null;
+let currentFilter = 'today';
+
+function todayStr() { return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' }); }
+function weekAgoStr() { const d = new Date(); d.setDate(d.getDate() - 7); return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' }); }
+
+// Auth
+async function checkAuth() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) { currentUser = session.user; showDashboard(); }
+}
+
+function showDashboard() {
+  document.getElementById('loginOverlay').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('userEmail').textContent = currentUser.email;
+  document.getElementById('headerDate').textContent = new Date().toLocaleDateString('es-ES', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Europe/Madrid'
+  });
+  refreshAll();
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('btnLogin');
+  const err = document.getElementById('loginError');
+  btn.disabled = true; btn.textContent = 'Entrando...'; err.style.display = 'none';
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+    currentUser = data.user; showDashboard();
+  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+  btn.disabled = false; btn.textContent = 'Entrar';
+}
+
+async function doLogout() {
+  await sb.auth.signOut(); currentUser = null;
+  document.getElementById('loginOverlay').style.display = 'flex';
+  document.getElementById('dashboard').style.display = 'none';
+}
+
+// Data
+async function loadContacts() {
+  if (!currentUser) return;
+  const tbody = document.getElementById('contactsBody');
+  let query = sb.from('contacts').select('*').eq('user_id', currentUser.id).order('date_contacted', { ascending: false });
+  if (currentFilter === 'today') query = query.gte('date_contacted', todayStr() + 'T00:00:00');
+  else if (currentFilter === 'week') query = query.gte('date_contacted', weekAgoStr() + 'T00:00:00');
+  const { data: contacts, error } = await query.limit(200);
+
+  if (error || !contacts || contacts.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">Sin contactos</td></tr>';
+    updateCards([]); return;
+  }
+  updateCards(contacts);
+  tbody.innerHTML = contacts.map(c => {
+    const date = c.date_contacted ? c.date_contacted.substring(0, 16).replace('T', ' ') : '-';
+    const zone = (c.zone || '-').length > 40 ? (c.zone || '').substring(0, 40) + '...' : (c.zone || '-');
+    const price = c.price ? Number(c.price).toLocaleString('es-ES') + ' \u20ac' : '-';
+    const status = c.status || 'unknown';
+    const cls = 'status-' + status.replace(/[^a-z_]/g, '');
+    return `<tr><td>${esc(date)}</td><td>${esc(c.phone || '-')}</td><td title="${esc(c.zone || '')}">${esc(zone)}</td><td>${esc(c.portal || '-')}</td><td>${esc(price)}</td><td><span class="status ${cls}">${esc(status)}</span></td></tr>`;
+  }).join('');
+}
+
+function updateCards(contacts) {
+  const today = todayStr();
+  const todayC = contacts.filter(c => c.date_contacted && c.date_contacted.startsWith(today));
+  document.getElementById('cardToday').textContent = todayC.length + '/15';
+  document.getElementById('cardTotal').textContent = contacts.length;
+  document.getElementById('cardSent').textContent = contacts.filter(c => ['sent','test','dry_run'].includes(c.status)).length;
+  document.getElementById('cardFailed').textContent = contacts.filter(c => c.status && (c.status.startsWith('failed') || c.status.startsWith('skipped'))).length;
+}
+
+async function loadLogs() {
+  if (!currentUser) return;
+  const viewer = document.getElementById('logViewer');
+  const { data: logs, error } = await sb.from('logs').select('message, created_at')
+    .eq('user_id', currentUser.id).gte('created_at', todayStr() + 'T00:00:00')
+    .order('created_at', { ascending: true }).limit(500);
+  if (error || !logs || logs.length === 0) { viewer.textContent = ''; return; }
+  viewer.textContent = logs.map(l => l.message).join('\n');
+  viewer.scrollTop = viewer.scrollHeight;
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === f));
+  loadContacts();
+}
+function refreshAll() { loadContacts(); loadLogs(); }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+checkAuth();
+setInterval(refreshAll, 30000);
+</script>
+</body>
+</html>
