@@ -300,25 +300,6 @@ body {
 }
 .step-text { font-size: 0.88rem; color: #444; line-height: 1.45; }
 .step-text strong { color: #1a1a2e; }
-.btn-download {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: #1a1a2e;
-  color: white;
-  font-size: 0.95rem;
-  font-weight: 600;
-  font-family: inherit;
-  padding: 0.85rem 2rem;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background 0.2s;
-  margin-bottom: 1rem;
-}
-.btn-download:hover { background: #2d2d4a; }
-.btn-download svg { width: 18px; height: 18px; fill: white; }
 .btn-secondary {
   display: inline-block;
   color: #888;
@@ -466,46 +447,38 @@ body {
       <div id="setupBox" class="setup-box">
         <div class="check-circle">&#x2705;</div>
         <h2>Cuenta creada</h2>
-        <p class="sub">Instala el software en tu Mac para empezar a captar</p>
+        <p class="sub">Sigue estos pasos para conectar tu Mac</p>
 
         <div class="setup-steps">
           <div class="setup-step">
             <div class="step-num">1</div>
-            <div class="step-text"><strong>Tu token de instalacion</strong> — Usalo cuando el instalador te lo pida</div>
+            <div class="step-text"><strong>Abre Terminal</strong> — Pulsa <kbd style="background:#eee;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.8rem;border:1px solid #ddd;">Cmd</kbd> + <kbd style="background:#eee;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.8rem;border:1px solid #ddd;">Espacio</kbd> y escribe <strong>Terminal</strong></div>
           </div>
-        </div>
-
-        <div id="tokenBox" style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.25rem; text-align: center; margin-bottom: 1.25rem;">
-          <div style="font-size: 2rem; font-weight: 700; letter-spacing: 0.15em; color: #1a1a2e; font-family: 'SF Mono', 'Menlo', monospace;" id="setupToken">...</div>
-          <div style="font-size: 0.75rem; color: #888; margin-top: 0.35rem;">Expira en 1 hora. Puedes generar otro desde el dashboard.</div>
-        </div>
-
-        <div class="setup-steps">
           <div class="setup-step">
             <div class="step-num">2</div>
-            <div class="step-text"><strong>Instala en tu Mac</strong> — Descarga y haz doble click para abrir Terminal</div>
+            <div class="step-text"><strong>Pega el comando</strong> — Pulsa el boton de abajo y luego <kbd style="background:#eee;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.8rem;border:1px solid #ddd;">Cmd</kbd> + <kbd style="background:#eee;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.8rem;border:1px solid #ddd;">V</kbd> en Terminal</div>
           </div>
         </div>
 
-        <a class="btn-download" href="#" id="btnDownloadInstaller" onclick="downloadInstaller(event)">
-          <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-          Descargar instalador (.command)
-        </a>
-
-        <div class="or-divider">o copia el comando en Terminal</div>
+        <button class="btn-primary" onclick="copyInstallCmd()" id="btnCopyInstall" style="margin-bottom: 0.75rem;">
+          Copiar comando de instalacion
+        </button>
         <div class="install-cmd">
           <code id="cmd"></code>
-          <button class="copy-btn" onclick="copyCmd()">copiar</button>
         </div>
 
-        <div class="setup-steps" style="margin-top: 1rem;">
+        <div class="setup-steps" style="margin-top: 1.25rem;">
           <div class="setup-step">
             <div class="step-num">3</div>
-            <div class="step-text"><strong>Abre el dashboard</strong> — Monitoriza tus contactos y logs</div>
+            <div class="step-text"><strong>Introduce tu contrasena</strong> — La misma que acabas de crear. El instalador configura todo automaticamente.</div>
+          </div>
+          <div class="setup-step">
+            <div class="step-num">4</div>
+            <div class="step-text"><strong>Abre el dashboard</strong> — Cuando termine la instalacion, entra para ver tus contactos</div>
           </div>
         </div>
 
-        <div style="margin-top:0.5rem">
+        <div style="margin-top:1rem">
           <a href="dashboard.html" class="btn-secondary">Ir al dashboard &#x2192;</a>
         </div>
       </div>
@@ -606,36 +579,16 @@ const INSTALL_URL = 'https://gist.githubusercontent.com/jorgetebl/09e242a919ca03
 
 function setToken(token) {
   currentToken = token;
-  document.getElementById('setupToken').textContent = token;
   document.getElementById('cmd').textContent = `curl -sL ${INSTALL_URL} | bash -s -- --setup-token ${token}`;
 }
 
-function downloadInstaller(e) {
-  e.preventDefault();
-  const script = `#!/bin/bash
-clear
-echo ""
-echo "  AI PropHunt — Instalador"
-echo "  Cerrando esta ventana NO cancela nada."
-echo ""
-curl -sL ${INSTALL_URL} | bash -s -- --setup-token ${currentToken}
-echo ""
-echo "Pulsa Enter para cerrar esta ventana."
-read
-`;
-  const blob = new Blob([script], { type: 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'install-prophunt.command';
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function copyCmd() {
-  navigator.clipboard.writeText(document.getElementById('cmd').textContent).then(() => {
-    const btn = document.querySelector('.copy-btn');
-    btn.textContent = 'copiado!'; setTimeout(() => btn.textContent = 'copiar', 2000);
+function copyInstallCmd() {
+  const cmd = document.getElementById('cmd').textContent;
+  navigator.clipboard.writeText(cmd).then(() => {
+    const btn = document.getElementById('btnCopyInstall');
+    btn.textContent = 'Copiado! Pegalo en Terminal';
+    btn.style.background = '#059669';
+    setTimeout(() => { btn.textContent = 'Copiar comando de instalacion'; btn.style.background = ''; }, 3000);
   });
 }
 
