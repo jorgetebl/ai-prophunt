@@ -27,10 +27,12 @@ echo ""
 
 # Parse args
 GH_TOKEN=""
+SETUP_TOKEN_ARG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --token) GH_TOKEN="$2"; shift 2 ;;
     --dir) INSTALL_DIR="$2"; shift 2 ;;
+    --setup-token) SETUP_TOKEN_ARG="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -170,7 +172,12 @@ if [[ -f .env ]] && grep -q "PROPHUNT_EMAIL=.\+" .env && grep -q "PROPHUNT_PASSW
 fi
 
 if [[ "$SKIP_SETUP" != "true" ]]; then
-  read -p "  Token de instalacion: " SETUP_TOKEN < /dev/tty
+  if [[ -n "$SETUP_TOKEN_ARG" ]]; then
+    SETUP_TOKEN="$SETUP_TOKEN_ARG"
+    echo "  Token recibido: $SETUP_TOKEN"
+  else
+    read -p "  Token de instalacion: " SETUP_TOKEN < /dev/tty
+  fi
 
   if [[ -z "$SETUP_TOKEN" ]]; then
     echo ""

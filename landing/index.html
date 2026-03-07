@@ -483,12 +483,18 @@ body {
         <div class="setup-steps">
           <div class="setup-step">
             <div class="step-num">2</div>
-            <div class="step-text"><strong>Instala en tu Mac</strong> — Copia el comando y pegalo en Terminal</div>
+            <div class="step-text"><strong>Instala en tu Mac</strong> — Descarga y haz doble click para abrir Terminal</div>
           </div>
         </div>
 
+        <a class="btn-download" href="#" id="btnDownloadInstaller" onclick="downloadInstaller(event)">
+          <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Descargar instalador (.command)
+        </a>
+
+        <div class="or-divider">o copia el comando en Terminal</div>
         <div class="install-cmd">
-          <code id="cmd">curl -sL https://gist.githubusercontent.com/jorgetebl/09e242a919ca0356b957760679edb51c/raw/prophunt-install.sh | bash</code>
+          <code id="cmd"></code>
           <button class="copy-btn" onclick="copyCmd()">copiar</button>
         </div>
 
@@ -564,7 +570,7 @@ async function handleRegister(e) {
       // Generate setup token for the new user
       const { data: token, error: tokenErr } = await sb.rpc('create_setup_token');
       if (!tokenErr && token) {
-        document.getElementById('setupToken').textContent = token;
+        setToken(token);
       } else {
         document.getElementById('setupToken').textContent = 'Error — genera uno desde el dashboard';
       }
@@ -593,6 +599,37 @@ async function handleLogin(e) {
     setTimeout(() => { window.location.href = 'dashboard.html'; }, 1000);
   } catch (err) { showError(err.message); }
   btn.disabled = false; btn.textContent = 'Entrar';
+}
+
+let currentToken = '';
+const INSTALL_URL = 'https://gist.githubusercontent.com/jorgetebl/09e242a919ca0356b957760679edb51c/raw/prophunt-install.sh';
+
+function setToken(token) {
+  currentToken = token;
+  document.getElementById('setupToken').textContent = token;
+  document.getElementById('cmd').textContent = `curl -sL ${INSTALL_URL} | bash -s -- --setup-token ${token}`;
+}
+
+function downloadInstaller(e) {
+  e.preventDefault();
+  const script = `#!/bin/bash
+clear
+echo ""
+echo "  AI PropHunt — Instalador"
+echo "  Cerrando esta ventana NO cancela nada."
+echo ""
+curl -sL ${INSTALL_URL} | bash -s -- --setup-token ${currentToken}
+echo ""
+echo "Pulsa Enter para cerrar esta ventana."
+read
+`;
+  const blob = new Blob([script], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'install-prophunt.command';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function copyCmd() {
