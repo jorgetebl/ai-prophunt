@@ -14,6 +14,10 @@ REPO="jorgetebl/ai-prophunt"
 INSTALL_DIR="$HOME/ai-prophunt"
 BRANCH="main"
 
+# Supabase (public keys — safe to hardcode)
+SB_URL="https://uolymolzgesvxucmbcgw.supabase.co"
+SB_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvbHltb2x6Z2Vzdnh1Y21iY2d3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NDcwMzgsImV4cCI6MjA4ODQyMzAzOH0.kQfyigV6A6MgnMk2oZaRhCcCla3VcAk2zhtPkFfe9Gc"
+
 echo ""
 echo "  ╔══════════════════════════════════════╗"
 echo "  ║   AI PropHunt — Instalador           ║"
@@ -38,7 +42,7 @@ if [[ "$(uname)" != "Darwin" ]]; then
 fi
 
 # ── Homebrew ──
-echo "[1/7] Homebrew..."
+echo "[1/8] Homebrew..."
 if command -v brew &>/dev/null; then
   echo "       Ya instalado"
 else
@@ -52,7 +56,7 @@ else
 fi
 
 # ── Node.js ──
-echo "[2/7] Node.js..."
+echo "[2/8] Node.js..."
 if command -v node &>/dev/null; then
   echo "       Ya instalado ($(node -v))"
 else
@@ -61,7 +65,7 @@ else
 fi
 
 # ── jq ──
-echo "[3/7] jq..."
+echo "[3/8] jq..."
 if command -v jq &>/dev/null; then
   echo "       Ya instalado"
 else
@@ -69,7 +73,7 @@ else
 fi
 
 # ── Claude Code CLI ──
-echo "[4/7] Claude Code CLI..."
+echo "[4/8] Claude Code CLI..."
 if command -v claude &>/dev/null; then
   echo "       Ya instalado"
 else
@@ -78,7 +82,7 @@ else
 fi
 
 # ── wacli ──
-echo "[5/7] wacli (WhatsApp CLI)..."
+echo "[5/8] wacli (WhatsApp CLI)..."
 if command -v wacli &>/dev/null; then
   echo "       Ya instalado"
 else
@@ -87,7 +91,7 @@ else
 fi
 
 # ── Descargar proyecto ──
-echo "[6/7] Descargando AI PropHunt..."
+echo "[6/8] Descargando AI PropHunt..."
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   echo "       Ya existe en $INSTALL_DIR, actualizando..."
   cd "$INSTALL_DIR" && git pull origin "$BRANCH" 2>/dev/null || true
@@ -120,8 +124,8 @@ fi
 
 cd "$INSTALL_DIR"
 
-# ── Configurar ──
-echo "[7/7] Configurando..."
+# ── Configurar proyecto ──
+echo "[7/8] Configurando proyecto..."
 chmod +x run.sh setup.sh scripts/*.sh 2>/dev/null || true
 mkdir -p data/logs
 
@@ -133,22 +137,81 @@ if [[ ! -f data/contacted.json ]]; then
   echo '{"contacts":[]}' > data/contacted.json
 fi
 
-if [[ ! -f .env ]]; then
-  cat > .env <<'ENVEOF'
+npm install --silent 2>/dev/null || true
+
+# ── Vincular cuenta con token de instalacion ──
+echo "[8/8] Vinculando cuenta..."
+echo ""
+echo "  Necesitas un token de instalacion para vincular tu Mac."
+echo "  Lo puedes obtener en: https://prophunt-app.netlify.app/dashboard"
+echo "  (Menu: Configuracion → Generar token)"
+echo ""
+
+# Check if .env already has valid credentials
+if [[ -f .env ]] && grep -q "PROPHUNT_EMAIL=.\+" .env && grep -q "PROPHUNT_PASSWORD=.\+" .env; then
+  echo "  Ya hay credenciales en .env. Saltar vinculacion? (s/n)"
+  read -p "  > " SKIP_AUTH
+  if [[ "$SKIP_AUTH" == "s" || "$SKIP_AUTH" == "S" ]]; then
+    echo "  Manteniendo credenciales existentes."
+    SKIP_SETUP=true
+  fi
+fi
+
+if [[ "$SKIP_SETUP" != "true" ]]; then
+  read -p "  Token de instalacion: " SETUP_TOKEN
+
+  if [[ -z "$SETUP_TOKEN" ]]; then
+    echo ""
+    echo "  No se introdujo token. Puedes configurar manualmente despues."
+    echo "  Ejecuta: $INSTALL_DIR/scripts/setup-auth.sh"
+  else
+    # Validate token via Supabase RPC
+    echo "  Validando token..."
+    VALIDATION=$(curl -s "$SB_URL/rest/v1/rpc/validate_setup_token" \
+      -H "apikey: $SB_ANON_KEY" \
+      -H "Authorization: Bearer $SB_ANON_KEY" \
+      -H "Content-Type: application/json" \
+      -d "{\"setup_token\": \"$SETUP_TOKEN\"}")
+
+    VALID=$(echo "$VALIDATION" | jq -r '.valid // false')
+
+    if [[ "$VALID" != "true" ]]; then
+      ERROR_MSG=$(echo "$VALIDATION" | jq -r '.error // "Token invalido"')
+      echo "  Token invalido: $ERROR_MSG"
+      echo "  Genera uno nuevo desde el dashboard y ejecuta: $INSTALL_DIR/scripts/setup-auth.sh"
+    else
+      USER_EMAIL=$(echo "$VALIDATION" | jq -r '.email')
+      echo "  Token valido para: $USER_EMAIL"
+      echo ""
+      read -sp "  Contrasena de $USER_EMAIL: " USER_PASSWORD
+      echo ""
+
+      # Validate password via Supabase Auth
+      AUTH_RESULT=$(curl -s "$SB_URL/auth/v1/token?grant_type=password" \
+        -H "apikey: $SB_ANON_KEY" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\": \"$USER_EMAIL\", \"password\": \"$USER_PASSWORD\"}")
+
+      if echo "$AUTH_RESULT" | jq -e '.access_token' > /dev/null 2>&1; then
+        echo "  Autenticacion OK"
+        # Write .env with credentials
+        cat > .env <<ENVEOF
 IDEALISTA_API_KEY=
 IDEALISTA_SECRET=
 
-# Supabase
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-PROPHUNT_EMAIL=
-PROPHUNT_PASSWORD=
+# Supabase (configurado automaticamente)
+SUPABASE_URL=$SB_URL
+SUPABASE_ANON_KEY=$SB_ANON_KEY
+PROPHUNT_EMAIL=$USER_EMAIL
+PROPHUNT_PASSWORD=$USER_PASSWORD
 ENVEOF
-  echo "       Creado .env — rellena las credenciales de Supabase"
+        echo "  .env configurado automaticamente"
+      else
+        echo "  Contrasena incorrecta. Puedes configurar despues: $INSTALL_DIR/scripts/setup-auth.sh"
+      fi
+    fi
+  fi
 fi
-
-npm install --silent 2>/dev/null || true
 
 echo ""
 echo "  ╔══════════════════════════════════════╗"
@@ -168,10 +231,6 @@ echo ""
 echo "  3. Loguearte en los portales inmobiliarios en Chrome:"
 echo "     idealista.com, fotocasa.es, pisos.com"
 echo "     (necesario para poder ver telefonos de vendedores)"
-echo ""
-echo "  4. Configurar Supabase en .env:"
-echo "     Abre $INSTALL_DIR/.env y rellena SUPABASE_URL,"
-echo "     SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, PROPHUNT_EMAIL y PROPHUNT_PASSWORD"
 echo ""
 echo "  El sistema se ejecutara automaticamente cada dia."
 echo "  Para probarlo manualmente: cd $INSTALL_DIR && ./run.sh test"

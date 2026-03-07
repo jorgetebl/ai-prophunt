@@ -4,71 +4,55 @@ let supabase = null;
 let cachedUserId = null;
 
 /**
- * Returns the Supabase client (service_role, bypasses RLS) or null if not configured.
+ * Returns the Supabase client (anon key + user auth session) or null if not configured.
  * Reads env vars lazily so dotenv has time to load.
  */
 export function getSupabase() {
   if (supabase) return supabase;
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = process.env.SUPABASE_ANON_KEY;
   if (!url || !key) return null;
   supabase = createClient(url, key);
   return supabase;
 }
 
 /**
- * Resolves the user_id automatically:
- * 1. From PROPHUNT_USER_ID env var (if set explicitly)
- * 2. By authenticating with PROPHUNT_EMAIL + PROPHUNT_PASSWORD
- * 3. By picking the only user in auth.users (single-tenant)
- * Result is cached after first resolution.
+ * Returns the cached user_id (set during init).
  */
 export async function getUserId() {
-  if (cachedUserId) return cachedUserId;
-
-  // 1. Explicit env var
-  if (process.env.PROPHUNT_USER_ID) {
-    cachedUserId = process.env.PROPHUNT_USER_ID;
-    return cachedUserId;
-  }
-
-  const sb = getSupabase();
-  if (!sb) return null;
-
-  // 2. Auth with email + password
-  const email = process.env.PROPHUNT_EMAIL;
-  const password = process.env.PROPHUNT_PASSWORD;
-  if (email && password) {
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
-    if (!error && data?.user?.id) {
-      cachedUserId = data.user.id;
-      return cachedUserId;
-    }
-    console.error('supabase auth:', error?.message || 'no user returned');
-  }
-
-  // 3. Single-tenant: pick the only user (via service_role)
-  const { data: { users }, error } = await sb.auth.admin.listUsers({ page: 1, perPage: 1 });
-  if (!error && users?.length === 1) {
-    cachedUserId = users[0].id;
-    return cachedUserId;
-  }
-
-  return null;
+  return cachedUserId;
 }
 
 export function isConfigured() {
-  return !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
 }
 
 /**
- * Call once at startup to resolve and cache the user_id.
+ * Call once at startup. Signs in with email+password to establish
+ * an authenticated session. All subsequent operations use RLS.
  * Returns true if Supabase is ready to use.
  */
 export async function init() {
   if (!isConfigured()) return false;
-  const userId = await getUserId();
-  return !!userId;
+
+  const sb = getSupabase();
+  if (!sb) return false;
+
+  const email = process.env.PROPHUNT_EMAIL;
+  const password = process.env.PROPHUNT_PASSWORD;
+  if (!email || !password) {
+    console.error('supabase: PROPHUNT_EMAIL y PROPHUNT_PASSWORD requeridos en .env');
+    return false;
+  }
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) {
+    console.error('supabase auth:', error.message);
+    return false;
+  }
+
+  cachedUserId = data.user.id;
+  return true;
 }
 
 // --- Contacts ---

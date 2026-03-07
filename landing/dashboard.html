@@ -416,6 +416,7 @@ tr:hover td { background: #f9fafb; }
       <a href="#" class="active"><span class="icon">&#x1F4CA;</span> Dashboard</a>
       <a href="#contacts-section" onclick="setFilter('all')"><span class="icon">&#x1F4CB;</span> Contactos</a>
       <a href="#logs-section"><span class="icon">&#x1F4DD;</span> Logs</a>
+      <a href="#setup-section"><span class="icon">&#x2699;&#xFE0F;</span> Configuracion</a>
     </nav>
     <div class="sidebar-footer">
       <span class="user-email" id="userEmail"></span>
@@ -488,6 +489,32 @@ tr:hover td { background: #f9fafb; }
         <h2>Log de hoy</h2>
       </div>
       <div class="log-viewer" id="logViewer"></div>
+    </div>
+
+    <!-- Setup / Config -->
+    <div class="section" id="setup-section">
+      <div class="section-header">
+        <h2>Configuracion del Mac</h2>
+      </div>
+      <div style="padding: 1.5rem;">
+        <p style="font-size: 0.9rem; color: var(--gray); margin-bottom: 1.25rem;">
+          Genera un token de instalacion para vincular tu Mac con tu cuenta. El token es de un solo uso y expira en 1 hora.
+        </p>
+        <button class="btn-refresh" onclick="generateToken()" id="btnGenToken" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.55rem 1.25rem;">
+          Generar token de instalacion
+        </button>
+        <div id="tokenDisplay" style="display: none; margin-top: 1.25rem;">
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.25rem; text-align: center;">
+            <div style="font-size: 0.75rem; color: var(--gray); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Tu token de instalacion</div>
+            <div id="tokenValue" style="font-size: 2rem; font-weight: 700; letter-spacing: 0.15em; color: var(--dark); font-family: 'SF Mono', 'Menlo', monospace;"></div>
+            <div style="font-size: 0.78rem; color: var(--gray); margin-top: 0.5rem;">Expira en 1 hora. Introducelo en el instalador cuando te lo pida.</div>
+          </div>
+          <div style="margin-top: 1rem; background: var(--dark); border-radius: 8px; padding: 0.65rem 1rem; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.75rem; color: #ccc; position: relative;">
+            <code id="installCmd">curl -sL https://gist.githubusercontent.com/jorgetebl/09e242a919ca0356b957760679edb51c/raw/prophunt-install.sh | bash</code>
+            <button onclick="copyInstallCmd()" style="position: absolute; top: 0.4rem; right: 0.4rem; background: rgba(255,255,255,0.1); color: #999; border: none; border-radius: 4px; padding: 0.15rem 0.45rem; font-size: 0.65rem; cursor: pointer;">copiar</button>
+          </div>
+        </div>
+      </div>
     </div>
 
   </main>
@@ -594,6 +621,28 @@ function setFilter(f) {
 }
 function refreshAll() { loadContacts(); loadLogs(); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// Token generation
+async function generateToken() {
+  const btn = document.getElementById('btnGenToken');
+  btn.disabled = true; btn.textContent = 'Generando...';
+  try {
+    const { data, error } = await sb.rpc('create_setup_token');
+    if (error) throw new Error(error.message);
+    document.getElementById('tokenValue').textContent = data;
+    document.getElementById('tokenDisplay').style.display = 'block';
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = 'Generar nuevo token';
+}
+
+function copyInstallCmd() {
+  navigator.clipboard.writeText(document.getElementById('installCmd').textContent).then(() => {
+    const btn = event.target;
+    btn.textContent = 'copiado!'; setTimeout(() => btn.textContent = 'copiar', 2000);
+  });
+}
 
 checkAuth();
 setInterval(refreshAll, 30000);

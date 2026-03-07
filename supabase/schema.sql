@@ -65,6 +65,68 @@ as $$
   select count(*) < 1 from auth.users;
 $$;
 
+-- Tokens de instalacion (vincula Mac con cuenta)
+create table setup_tokens (
+  id bigint generated always as identity primary key,
+  user_id uuid references auth.users(id) not null,
+  token text not null unique,
+  used boolean default false,
+  expires_at timestamptz not null,
+  created_at timestamptz default now()
+);
+
+alter table setup_tokens enable row level security;
+
+create policy "Users manage own tokens" on setup_tokens
+  for all using (auth.uid() = user_id);
+
+-- RPC: Generar token de instalacion (solo usuarios autenticados)
+create or replace function create_setup_token()
+returns text
+language plpgsql
+security definer
+as $$
+declare
+  new_token text;
+begin
+  new_token := upper(substr(md5(random()::text), 1, 8));
+  update setup_tokens set used = true where user_id = auth.uid() and used = false;
+  insert into setup_tokens (user_id, token, expires_at)
+  values (auth.uid(), new_token, now() + interval '1 hour');
+  return new_token;
+end;
+$$;
+
+-- RPC: Validar token de instalacion (callable con anon key)
+create or replace function validate_setup_token(setup_token text)
+returns json
+language plpgsql
+security definer
+as $$
+declare
+  token_record record;
+begin
+  select st.*, u.email into token_record
+  from setup_tokens st
+  join auth.users u on u.id = st.user_id
+  where st.token = upper(setup_token)
+    and st.used = false
+    and st.expires_at > now();
+
+  if not found then
+    return json_build_object('valid', false, 'error', 'Token invalido o expirado');
+  end if;
+
+  update setup_tokens set used = true where id = token_record.id;
+
+  return json_build_object(
+    'valid', true,
+    'user_id', token_record.user_id,
+    'email', token_record.email
+  );
+end;
+$$;
+
 -- Indices para queries frecuentes
 create index idx_contacts_user_date on contacts(user_id, date_contacted desc);
 create index idx_contacts_phone on contacts(phone);

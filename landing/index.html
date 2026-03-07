@@ -466,35 +466,40 @@ body {
       <div id="setupBox" class="setup-box">
         <div class="check-circle">&#x2705;</div>
         <h2>Cuenta creada</h2>
-        <p class="sub">Confirma tu email y luego instala el software en tu Mac</p>
+        <p class="sub">Instala el software en tu Mac para empezar a captar</p>
 
         <div class="setup-steps">
           <div class="setup-step">
             <div class="step-num">1</div>
-            <div class="step-text"><strong>Confirma tu email</strong> — Revisa tu bandeja de entrada y haz click en el enlace de verificacion</div>
-          </div>
-          <div class="setup-step">
-            <div class="step-num">2</div>
-            <div class="step-text"><strong>Instala en tu Mac</strong> — Descarga el instalador o copia el comando de abajo</div>
-          </div>
-          <div class="setup-step">
-            <div class="step-num">3</div>
-            <div class="step-text"><strong>Abre el dashboard</strong> — Inicia sesion para ver tus contactos y logs</div>
+            <div class="step-text"><strong>Tu token de instalacion</strong> — Usalo cuando el instalador te lo pida</div>
           </div>
         </div>
 
-        <a class="btn-download" href="install-prophunt.command" download>
-          <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-          Descargar instalador (macOS)
-        </a>
+        <div id="tokenBox" style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.25rem; text-align: center; margin-bottom: 1.25rem;">
+          <div style="font-size: 2rem; font-weight: 700; letter-spacing: 0.15em; color: #1a1a2e; font-family: 'SF Mono', 'Menlo', monospace;" id="setupToken">...</div>
+          <div style="font-size: 0.75rem; color: #888; margin-top: 0.35rem;">Expira en 1 hora. Puedes generar otro desde el dashboard.</div>
+        </div>
 
-        <div class="or-divider">o copia este comando en Terminal</div>
+        <div class="setup-steps">
+          <div class="setup-step">
+            <div class="step-num">2</div>
+            <div class="step-text"><strong>Instala en tu Mac</strong> — Copia el comando y pegalo en Terminal</div>
+          </div>
+        </div>
+
         <div class="install-cmd">
           <code id="cmd">curl -sL https://gist.githubusercontent.com/jorgetebl/09e242a919ca0356b957760679edb51c/raw/prophunt-install.sh | bash</code>
           <button class="copy-btn" onclick="copyCmd()">copiar</button>
         </div>
 
-        <div style="margin-top:1.5rem">
+        <div class="setup-steps" style="margin-top: 1rem;">
+          <div class="setup-step">
+            <div class="step-num">3</div>
+            <div class="step-text"><strong>Abre el dashboard</strong> — Monitoriza tus contactos y logs</div>
+          </div>
+        </div>
+
+        <div style="margin-top:0.5rem">
           <a href="dashboard.html" class="btn-secondary">Ir al dashboard &#x2192;</a>
         </div>
       </div>
@@ -556,6 +561,13 @@ async function handleRegister(e) {
     if (error) throw new Error(error.message);
     if (data.user) {
       await sb.from('configs').insert({ user_id: data.user.id, max_contacts_per_day: 15, min_delay_minutes: 2 });
+      // Generate setup token for the new user
+      const { data: token, error: tokenErr } = await sb.rpc('create_setup_token');
+      if (!tokenErr && token) {
+        document.getElementById('setupToken').textContent = token;
+      } else {
+        document.getElementById('setupToken').textContent = 'Error — genera uno desde el dashboard';
+      }
       // Show setup screen instead of redirecting
       document.getElementById('registerForm').style.display = 'none';
       document.getElementById('loginForm').style.display = 'none';
