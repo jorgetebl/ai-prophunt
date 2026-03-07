@@ -150,7 +150,7 @@ echo ""
 # Check if .env already has valid credentials
 if [[ -f .env ]] && grep -q "PROPHUNT_EMAIL=.\+" .env && grep -q "PROPHUNT_PASSWORD=.\+" .env; then
   echo "  Ya hay credenciales en .env. Saltar vinculacion? (s/n)"
-  read -p "  > " SKIP_AUTH
+  read -p "  > " SKIP_AUTH < /dev/tty
   if [[ "$SKIP_AUTH" == "s" || "$SKIP_AUTH" == "S" ]]; then
     echo "  Manteniendo credenciales existentes."
     SKIP_SETUP=true
@@ -158,7 +158,7 @@ if [[ -f .env ]] && grep -q "PROPHUNT_EMAIL=.\+" .env && grep -q "PROPHUNT_PASSW
 fi
 
 if [[ "$SKIP_SETUP" != "true" ]]; then
-  read -p "  Token de instalacion: " SETUP_TOKEN
+  read -p "  Token de instalacion: " SETUP_TOKEN < /dev/tty
 
   if [[ -z "$SETUP_TOKEN" ]]; then
     echo ""
@@ -183,7 +183,7 @@ if [[ "$SKIP_SETUP" != "true" ]]; then
       USER_EMAIL=$(echo "$VALIDATION" | jq -r '.email')
       echo "  Token valido para: $USER_EMAIL"
       echo ""
-      read -sp "  Contrasena de $USER_EMAIL: " USER_PASSWORD
+      read -sp "  Contrasena de $USER_EMAIL: " USER_PASSWORD < /dev/tty
       echo ""
 
       # Validate password via Supabase Auth
