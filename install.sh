@@ -42,7 +42,7 @@ if [[ "$(uname)" != "Darwin" ]]; then
 fi
 
 # ── Homebrew ──
-echo "[1/8] Homebrew..."
+echo "[1/9] Homebrew..."
 if command -v brew &>/dev/null; then
   echo "       Ya instalado"
 else
@@ -56,7 +56,7 @@ else
 fi
 
 # ── Node.js ──
-echo "[2/8] Node.js..."
+echo "[2/9] Node.js..."
 if command -v node &>/dev/null; then
   echo "       Ya instalado ($(node -v))"
 else
@@ -65,7 +65,7 @@ else
 fi
 
 # ── jq ──
-echo "[3/8] jq..."
+echo "[3/9] jq..."
 if command -v jq &>/dev/null; then
   echo "       Ya instalado"
 else
@@ -73,7 +73,7 @@ else
 fi
 
 # ── Claude Code CLI ──
-echo "[4/8] Claude Code CLI..."
+echo "[4/9] Claude Code CLI..."
 if command -v claude &>/dev/null; then
   echo "       Ya instalado"
 else
@@ -82,7 +82,7 @@ else
 fi
 
 # ── wacli ──
-echo "[5/8] wacli (WhatsApp CLI)..."
+echo "[5/9] wacli (WhatsApp CLI)..."
 if command -v wacli &>/dev/null; then
   echo "       Ya instalado"
 else
@@ -91,7 +91,7 @@ else
 fi
 
 # ── Descargar proyecto ──
-echo "[6/8] Descargando AI PropHunt..."
+echo "[6/9] Descargando AI PropHunt..."
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   echo "       Ya existe en $INSTALL_DIR, actualizando..."
   cd "$INSTALL_DIR" && git pull origin "$BRANCH" 2>/dev/null || true
@@ -125,7 +125,7 @@ fi
 cd "$INSTALL_DIR"
 
 # ── Configurar proyecto ──
-echo "[7/8] Configurando proyecto..."
+echo "[7/9] Configurando proyecto..."
 chmod +x run.sh setup.sh scripts/*.sh 2>/dev/null || true
 mkdir -p data/logs
 
@@ -139,8 +139,20 @@ fi
 
 npm install --silent 2>/dev/null || true
 
+# ── Vincular WhatsApp ──
+echo "[8/9] Vinculando WhatsApp..."
+if wacli doctor 2>&1 | grep -qi "connected\|authenticated\|ok"; then
+  echo "       Ya vinculado"
+else
+  echo ""
+  echo "  Necesitas escanear un QR con WhatsApp para vincular."
+  echo "  Se abrira el proceso de autenticacion de wacli."
+  echo ""
+  wacli auth < /dev/tty || echo "       No se pudo vincular. Puedes hacerlo despues con: wacli auth"
+fi
+
 # ── Vincular cuenta con token de instalacion ──
-echo "[8/8] Vinculando cuenta..."
+echo "[9/9] Vinculando cuenta..."
 echo ""
 echo "  Necesitas un token de instalacion para vincular tu Mac."
 echo "  Lo puedes obtener en: https://prophunt-app.netlify.app/dashboard"
@@ -225,10 +237,7 @@ echo ""
 echo "  1. Instalar extension Claude en Chrome:"
 echo "     https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn"
 echo ""
-echo "  2. Vincular WhatsApp (escanear QR):"
-echo "     wacli auth"
-echo ""
-echo "  3. Loguearte en los portales inmobiliarios en Chrome:"
+echo "  2. Loguearte en los portales inmobiliarios en Chrome:"
 echo "     idealista.com, fotocasa.es, pisos.com"
 echo "     (necesario para poder ver telefonos de vendedores)"
 echo ""
