@@ -579,7 +579,7 @@ const INSTALL_URL = 'https://gist.githubusercontent.com/jorgetebl/09e242a919ca03
 
 function setToken(token) {
   currentToken = token;
-  document.getElementById('cmd').textContent = `curl -sL ${INSTALL_URL} | bash -s -- --setup-token ${token}`;
+  document.getElementById('cmd').textContent = `curl -sL ${INSTALL_URL} -o /tmp/prophunt-install.sh && bash /tmp/prophunt-install.sh --setup-token ${token}`;
 }
 
 function copyInstallCmd() {
