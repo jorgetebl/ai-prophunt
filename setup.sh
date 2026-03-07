@@ -91,7 +91,7 @@ echo "  - https://www.pisos.com"
 echo "  (necesario para poder ver telefonos de vendedores)"
 echo ""
 echo "  Instala la extension de Chrome de Claude Code:"
-echo "  https://chromewebstore.google.com/detail/claude/danfoalhlfigljpbflibpbpnpoafglcl"
+echo "  https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn"
 
 # 7. Make scripts executable
 chmod +x run.sh scripts/*.sh 2>/dev/null || true
@@ -103,7 +103,7 @@ echo "Proximos pasos:"
 echo "  1. Autenticar wacli (si no lo has hecho): wacli auth"
 echo "  2. Loguearte en los portales en Chrome (idealista, fotocasa, pisos.com)"
 echo "  3. Instalar extension Claude en Chrome:"
-echo "     https://chromewebstore.google.com/detail/claude/danfoalhlfigljpbflibpbpnpoafglcl"
+echo "     https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn"
 echo ""
 echo "El sistema se ejecutara automaticamente cada dia."
 echo "Para probarlo: ./run.sh test"
