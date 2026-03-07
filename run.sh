@@ -85,11 +85,86 @@ fi
 #  MODO TEST — Ciclo completo con teléfono de prueba
 # ═══════════════════════════════════════════
 if [[ "$MODE" == "test" ]]; then
-  TEST_PHONE="${2:-34629659757}"
-  # Strip leading + if present
-  TEST_PHONE="${TEST_PHONE#+}"
+  echo "Modo: TEST (ciclo completo con confirmacion)" | tee -a "$LOG"
 
-  echo "Modo: TEST (ciclo completo → WhatsApp a $TEST_PHONE)" | tee -a "$LOG"
+  # ── Pre-flight checks ──
+  echo "" | tee -a "$LOG"
+  echo "Verificando requisitos..." | tee -a "$LOG"
+  PREFLIGHT_OK=true
+
+  # 1. Claude Code CLI
+  if ! command -v claude &>/dev/null; then
+    echo "  FAIL  Claude Code CLI no instalado" | tee -a "$LOG"
+    echo "         Instalar: npm install -g @anthropic-ai/claude-code" | tee -a "$LOG"
+    PREFLIGHT_OK=false
+  else
+    echo "  OK    Claude Code CLI" | tee -a "$LOG"
+  fi
+
+  # 2. Claude Code autenticado
+  CLAUDE_AUTH=$(claude auth status 2>&1)
+  if echo "$CLAUDE_AUTH" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('loggedIn') else 1)" 2>/dev/null; then
+    CLAUDE_EMAIL=$(echo "$CLAUDE_AUTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('email','?'))" 2>/dev/null)
+    echo "  OK    Claude autenticado ($CLAUDE_EMAIL)" | tee -a "$LOG"
+  else
+    echo "  FAIL  Claude Code no autenticado" | tee -a "$LOG"
+    echo "         Ejecutar: claude auth login" | tee -a "$LOG"
+    PREFLIGHT_OK=false
+  fi
+
+  # 3. Chrome corriendo
+  if pgrep -x "Google Chrome" >/dev/null 2>&1 || pgrep -f "Google Chrome" >/dev/null 2>&1; then
+    echo "  OK    Chrome corriendo" | tee -a "$LOG"
+  else
+    echo "  FAIL  Chrome no esta abierto" | tee -a "$LOG"
+    echo "         Abre Chrome con Gmail logueado" | tee -a "$LOG"
+    PREFLIGHT_OK=false
+  fi
+
+  # 4. Extension Claude en Chrome
+  CLAUDE_EXT_DIR="$HOME/Library/Application Support/Google/Chrome/Default/Extensions/fcoeoabgfenejglbffodgkkbkcdhcgfn"
+  if [[ -d "$CLAUDE_EXT_DIR" ]]; then
+    echo "  OK    Extension Claude en Chrome" | tee -a "$LOG"
+  else
+    echo "  FAIL  Extension Claude no instalada en Chrome" | tee -a "$LOG"
+    echo "         Instalar desde Chrome Web Store: buscar 'Claude'" | tee -a "$LOG"
+    PREFLIGHT_OK=false
+  fi
+
+  # 5. wacli
+  if command -v wacli &>/dev/null; then
+    if wacli doctor 2>&1 | grep -qi "connected\|authenticated\|ok"; then
+      echo "  OK    wacli conectado" | tee -a "$LOG"
+    else
+      echo "  WARN  wacli instalado pero puede no estar autenticado" | tee -a "$LOG"
+      echo "         Verificar: wacli doctor" | tee -a "$LOG"
+    fi
+  else
+    echo "  FAIL  wacli no instalado" | tee -a "$LOG"
+    echo "         Instalar: brew install steipete/tap/wacli" | tee -a "$LOG"
+    PREFLIGHT_OK=false
+  fi
+
+  echo "" | tee -a "$LOG"
+
+  if [[ "$PREFLIGHT_OK" != "true" ]]; then
+    echo "Hay problemas que resolver antes de ejecutar el test." | tee -a "$LOG"
+    echo "Corrige los FAIL de arriba e intentalo de nuevo." | tee -a "$LOG"
+    echo ""
+    echo "Pulsa Enter para cerrar"; read
+    exit 1
+  fi
+
+  echo "Todo OK." | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
+  echo "IMPORTANTE: Asegurate de que en Chrome:" | tee -a "$LOG"
+  echo "  1. La extension de Claude esta activa (icono Claude en la barra de extensiones)" | tee -a "$LOG"
+  echo "  2. Gmail esta abierto en una pestana con al menos un email de Idealista" | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
+  read -p "Pulsa Enter cuando este listo para continuar..."
+  echo "" | tee -a "$LOG"
+  echo "Lanzando test..." | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
 
   # Leer plantilla de WhatsApp
   WHATSAPP_TEMPLATE=""
@@ -97,82 +172,173 @@ if [[ "$MODE" == "test" ]]; then
     WHATSAPP_TEMPLATE=$(cat "$DIR/templates/whatsapp.txt")
   fi
 
-  claude --print --chrome --dangerously-skip-permissions \
-    --allowedTools "Bash(read:*) Bash(wacli:*) Bash(jq:*) Bash(date:*) Bash(mkdir:*) mcp__claude-in-chrome__*" \
-    "Eres un agente de captación inmobiliaria automatizado para Juanan Gomis (REMAX Experience, Palma de Mallorca).
+  # Temp files for Claude to write results
+  TEST_MSG_FILE="/tmp/prophunt_test_message.txt"
+  TEST_DATA_FILE="/tmp/prophunt_test_data.json"
+  rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
 
-MODO TEST: Vas a hacer UN ciclo completo de prueba. El WhatsApp se envía al número de test $TEST_PHONE (NO al teléfono real del anuncio).
+  # Write prompt to temp file to avoid quoting issues
+  PROMPT_FILE=$(mktemp /tmp/prophunt_test_prompt.XXXXXX)
+  cat > "$PROMPT_FILE" <<PROMPT_EOF
+Eres un agente de captacion inmobiliaria automatizado para Juanan Gomis (REMAX Experience, Palma de Mallorca).
+
+MODO TEST: Vas a hacer el ciclo completo de captacion PERO SIN ENVIAR el WhatsApp. Solo preparas todo y guardas el resultado en archivos temporales.
 
 PASO 1: BUSCAR EMAIL DE IDEALISTA EN GMAIL
-- Usa tabs_context_mcp para obtener las pestañas abiertas en Chrome
-- Gmail ya debería estar abierto. Encuéntralo
-- Busca: from:idealista (o similar — un email reciente con un link a un inmueble)
-- Si no hay ningún email de Idealista, busca cualquier email que contenga un link a idealista.com
-- Abre el email más reciente que tenga un link a idealista
+- Usa tabs_context_mcp para obtener las pestanas abiertas en Chrome
+- Gmail ya deberia estar abierto. Encuentralo
+- Busca: from:idealista (o similar, un email reciente con un link a un inmueble)
+- Si no hay ningun email de Idealista, busca cualquier email que contenga un link a idealista.com
+- Abre el email mas reciente que tenga un link a idealista
 
 PASO 2: ABRIR EL INMUEBLE
 - Del email, extrae el link a idealista.com
-- Abre ese link en una nueva pestaña
+- Abre ese link en una nueva pestana
 - Espera a que cargue completamente
 
 PASO 3: LEER LA FICHA DEL INMUEBLE
 - Lee TODOS los detalles de la ficha:
-  - Dirección / zona
+  - Direccion / zona
   - Precio
   - Metros cuadrados
-  - Número de habitaciones y baños
+  - Numero de habitaciones y banos
   - Planta
-  - Características destacadas (terraza, ascensor, reformado, vistas, garaje, etc.)
-  - Tipo de inmueble (piso, casa, ático, dúplex, etc.)
+  - Caracteristicas destacadas (terraza, ascensor, reformado, vistas, garaje, etc.)
+  - Tipo de inmueble (piso, casa, atico, duplex, etc.)
   - Nombre del anunciante si aparece
 - Registra todos estos datos, los necesitas para personalizar el mensaje
 
-PASO 4: VER EL TELÉFONO (solo para verificar que funciona)
-- Busca el botón 'Ver teléfono' o 'Contactar' y haz click
-- Extrae el número que aparece
-- Registra el número REAL pero NO lo uses para el envío (es una prueba)
+PASO 4: VER EL TELEFONO (solo para verificar que funciona)
+- Busca el boton Ver telefono o Contactar y haz click
+- Extrae el numero que aparece
+- Registra el numero REAL en los datos
 
 PASO 5: CONSTRUIR MENSAJE PERSONALIZADO
 - Usa la plantilla base:
 $WHATSAPP_TEMPLATE
 
 - Reemplaza los campos:
-  - {{nombre}} → nombre del anunciante si lo hay, si no quitar esa parte (cambiar 'Hola {{nombre}}, soy' por 'Hola, soy')
-  - {{tipo}} → tipo de inmueble (piso, casa, ático, etc.)
-  - {{zona}} → dirección o zona del inmueble
-  - {{portal}} → idealista
-  - {{precio}} → precio formateado (ej: '350.000 €')
-  - {{detalle}} → genera UNA frase natural y corta (máx 20 palabras) mencionando algo específico y positivo de la ficha. Ejemplos:
-    'Los 85 m² con terraza y esas vistas al parque tienen muy buena pinta'
-    'Un ático de 3 habitaciones con esa orientación sur es difícil de encontrar'
-    'La reforma reciente y la ubicación junto al centro lo hacen muy atractivo'
-    NO seas genérico. Menciona algo CONCRETO de la ficha.
+  - {{nombre}} -> nombre del anunciante si lo hay, si no quitar esa parte (cambiar Hola nombre soy por Hola soy)
+  - {{tipo}} -> tipo de inmueble (piso, casa, atico, etc.)
+  - {{zona}} -> direccion o zona del inmueble
+  - {{portal}} -> idealista
+  - {{precio}} -> precio formateado (ej: 350.000 euros)
+  - {{detalle}} -> genera UNA frase natural y corta (max 20 palabras) mencionando algo especifico y positivo de la ficha. Ejemplos:
+    Los 85 m2 con terraza y esas vistas al parque tienen muy buena pinta
+    Un atico de 3 habitaciones con esa orientacion sur es dificil de encontrar
+    La reforma reciente y la ubicacion junto al centro lo hacen muy atractivo
+    NO seas generico. Menciona algo CONCRETO de la ficha.
 
-PASO 6: ENVIAR WHATSAPP AL NÚMERO DE TEST
-- Comando: wacli send text --to '$TEST_PHONE' --message '<mensaje construido>'
-- IMPORTANTE: enviar al $TEST_PHONE, NO al teléfono de la ficha
+PASO 6: GUARDAR RESULTADOS (NO ENVIAR WHATSAPP)
+- Guarda el mensaje construido en $TEST_MSG_FILE (solo el texto del mensaje, nada mas)
+- Guarda los datos del inmueble en $TEST_DATA_FILE como JSON:
+  {"name": "nombre o null", "url": "url", "portal": "idealista", "zone": "zona", "price": precio, "phone_real": "telefono extraido de la ficha"}
 
-PASO 7: REGISTRAR
-- Actualizar $DIR/data/contacted.json:
-  {
-    \"phone\": \"$TEST_PHONE\",
-    \"name\": \"<nombre o null>\",
-    \"url\": \"<url del inmueble>\",
-    \"portal\": \"idealista\",
-    \"zone\": \"<zona>\",
-    \"price\": <precio>,
-    \"date_contacted\": \"<ISO timestamp>\",
-    \"status\": \"test\",
-    \"message_preview\": \"<primeros 100 chars del mensaje>\",
-    \"notes\": \"TEST: teléfono real del anuncio era <tel_real>. Enviado a $TEST_PHONE\"
-  }
-- Escribir log en $DIR/data/logs/$DATE.log con timestamp para cada acción
-- Al terminar, escribir resumen
+NO envies ningun WhatsApp. Solo guarda los archivos.
 
-Directorio de trabajo: $DIR" 2>&1 | tee -a "$LOG"
+Directorio de trabajo: $DIR
+PROMPT_EOF
+
+  echo "Lanzando Claude Code para analizar inmueble..." | tee -a "$LOG"
+  claude --print --chrome --dangerously-skip-permissions \
+    --allowedTools "Bash(read:*) Bash(write:*) Bash(cat:*) Bash(echo:*) Bash(jq:*) Bash(date:*) Bash(mkdir:*) mcp__claude-in-chrome__*" \
+    < "$PROMPT_FILE" 2>&1 | tee -a "$LOG"
+
+  rm -f "$PROMPT_FILE"
+
+  # Check if Claude produced the message file
+  if [[ ! -f "$TEST_MSG_FILE" ]]; then
+    echo "" | tee -a "$LOG"
+    echo "ERROR: No se pudo generar el mensaje. Revisa los logs." | tee -a "$LOG"
+    echo ""
+    echo "Pulsa Enter para cerrar"; read
+    exit 1
+  fi
+
+  # Show results to user
+  echo "" | tee -a "$LOG"
+  echo "═══════════════════════════════════════════" | tee -a "$LOG"
+  echo "  RESULTADO DEL TEST" | tee -a "$LOG"
+  echo "═══════════════════════════════════════════" | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
+
+  if [[ -f "$TEST_DATA_FILE" ]]; then
+    echo "Inmueble: $(jq -r '.zone // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
+    echo "Precio:   $(jq -r '.price // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
+    echo "Portal:   $(jq -r '.portal // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
+    echo "URL:      $(jq -r '.url // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
+    PHONE_REAL=$(jq -r '.phone_real // "no extraido"' "$TEST_DATA_FILE")
+    echo "Tel real: $PHONE_REAL" | tee -a "$LOG"
+  fi
+
+  echo "" | tee -a "$LOG"
+  echo "--- Mensaje WhatsApp ---" | tee -a "$LOG"
+  cat "$TEST_MSG_FILE" | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
+  echo "------------------------" | tee -a "$LOG"
+  echo ""
+
+  # Ask for phone number
+  read -p "Telefono al que enviar el test (Enter = 34629659757, 'n' = cancelar): " TEST_PHONE
+  if [[ "$TEST_PHONE" == "n" || "$TEST_PHONE" == "N" ]]; then
+    echo "Envio cancelado." | tee -a "$LOG"
+    rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
+    echo ""
+    echo "Pulsa Enter para cerrar"; read
+    exit 0
+  fi
+  TEST_PHONE="${TEST_PHONE:-34629659757}"
+  # Strip leading +
+  TEST_PHONE="${TEST_PHONE#+}"
+  # Ensure 34 prefix
+  if [[ ! "$TEST_PHONE" == 34* ]]; then
+    TEST_PHONE="34$TEST_PHONE"
+  fi
+
+  echo "" | tee -a "$LOG"
+  echo "Enviando WhatsApp a $TEST_PHONE..." | tee -a "$LOG"
+
+  MSG_CONTENT=$(cat "$TEST_MSG_FILE")
+  if wacli send text --to "$TEST_PHONE" --message "$MSG_CONTENT" 2>&1 | tee -a "$LOG"; then
+    echo "WhatsApp enviado OK" | tee -a "$LOG"
+    SEND_STATUS="test"
+  else
+    echo "ERROR al enviar WhatsApp" | tee -a "$LOG"
+    SEND_STATUS="test_failed"
+  fi
+
+  # Register in contacted.json
+  if [[ -f "$TEST_DATA_FILE" ]]; then
+    CONTACT_NAME=$(jq -r '.name // ""' "$TEST_DATA_FILE")
+    CONTACT_URL=$(jq -r '.url // ""' "$TEST_DATA_FILE")
+    CONTACT_ZONE=$(jq -r '.zone // ""' "$TEST_DATA_FILE")
+    CONTACT_PRICE=$(jq -r '.price // 0' "$TEST_DATA_FILE")
+    CONTACT_PHONE_REAL=$(jq -r '.phone_real // ""' "$TEST_DATA_FILE")
+
+    # Add to contacted.json using jq
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S")
+    MSG_PREVIEW=$(head -c 100 "$TEST_MSG_FILE")
+    jq --arg phone "$TEST_PHONE" \
+       --arg name "$CONTACT_NAME" \
+       --arg url "$CONTACT_URL" \
+       --arg zone "$CONTACT_ZONE" \
+       --argjson price "$CONTACT_PRICE" \
+       --arg date "$TIMESTAMP" \
+       --arg status "$SEND_STATUS" \
+       --arg preview "$MSG_PREVIEW" \
+       --arg notes "TEST: telefono real del anuncio era $CONTACT_PHONE_REAL. Enviado a $TEST_PHONE" \
+       '.contacts += [{"phone":$phone,"name":$name,"url":$url,"portal":"idealista","zone":$zone,"price":$price,"date_contacted":$date,"status":$status,"message_preview":$preview,"notes":$notes}]' \
+       data/contacted.json > data/contacted_tmp.json && mv data/contacted_tmp.json data/contacted.json
+
+    echo "Contacto registrado en contacted.json" | tee -a "$LOG"
+  fi
+
+  rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
 
   echo "" | tee -a "$LOG"
   echo "Run TEST completado — $DATE $(date +%H:%M)" | tee -a "$LOG"
+  echo ""
+  echo "Pulsa Enter para cerrar"; read
 
 # ═══════════════════════════════════════════
 #  MODO API — Idealista API + Claude Code
