@@ -155,27 +155,22 @@ fi
 
 # ── Vincular cuenta con token de instalacion ──
 echo "[9/9] Vinculando cuenta..."
-echo ""
-echo "  Necesitas un token de instalacion para vincular tu Mac."
-echo "  Lo puedes obtener en: https://prophunt-app.netlify.app/dashboard"
-echo "  (Menu: Configuracion → Generar token)"
-echo ""
 
 # Check if .env already has valid credentials
 if [[ -f .env ]] && grep -q "PROPHUNT_EMAIL=.\+" .env && grep -q "PROPHUNT_PASSWORD=.\+" .env; then
-  echo "  Ya hay credenciales en .env. Saltar vinculacion? (s/n)"
-  read -p "  > " SKIP_AUTH < /dev/tty
-  if [[ "$SKIP_AUTH" == "s" || "$SKIP_AUTH" == "S" ]]; then
-    echo "  Manteniendo credenciales existentes."
-    SKIP_SETUP=true
-  fi
+  echo "       Ya configurado"
+  SKIP_SETUP=true
 fi
 
 if [[ "$SKIP_SETUP" != "true" ]]; then
   if [[ -n "$SETUP_TOKEN_ARG" ]]; then
     SETUP_TOKEN="$SETUP_TOKEN_ARG"
-    echo "  Token recibido: $SETUP_TOKEN"
   else
+    echo ""
+    echo "  Necesitas un token de instalacion para vincular tu Mac."
+    echo "  Lo puedes obtener en: https://prophunt-app.netlify.app/dashboard"
+    echo "  (Menu: Configuracion → Generar token)"
+    echo ""
     read -p "  Token de instalacion: " SETUP_TOKEN < /dev/tty
   fi
 
