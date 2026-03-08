@@ -115,8 +115,9 @@ Después de cada acción (éxito o fallo), actualizar:
 
 ## GitHub
 
-- **Siempre usar la cuenta `meetzyio`** para operaciones con `gh` (push, pull, etc.)
-- Repo: `jorgetebl/ai-prophunt` (meetzyio tiene acceso como colaborador)
+- **Siempre usar la cuenta `jorgetebl`** para operaciones con `gh` (push, pull, etc.)
+- Si `gh auth status` muestra otra cuenta activa, hacer `gh auth switch --user jorgetebl` antes de push
+- Repo: `jorgetebl/ai-prophunt`
 
 ## Reglas de seguridad
 
