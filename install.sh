@@ -153,7 +153,7 @@ else
   wacli auth < /dev/tty || echo "       No se pudo vincular. Puedes hacerlo despues con: wacli auth"
 fi
 
-# ── Vincular cuenta con token de instalacion ──
+# ── Vincular cuenta ──
 echo "[9/9] Vinculando cuenta..."
 
 # Check if .env already has valid credentials
@@ -163,6 +163,7 @@ if [[ -f .env ]] && grep -q "PROPHUNT_EMAIL=.\+" .env && grep -q "PROPHUNT_PASSW
 fi
 
 if [[ "$SKIP_SETUP" != "true" ]]; then
+  # Get token (from arg or ask)
   if [[ -n "$SETUP_TOKEN_ARG" ]]; then
     SETUP_TOKEN="$SETUP_TOKEN_ARG"
   else
@@ -176,11 +177,10 @@ if [[ "$SKIP_SETUP" != "true" ]]; then
 
   if [[ -z "$SETUP_TOKEN" ]]; then
     echo ""
-    echo "  No se introdujo token. Puedes configurar manualmente despues."
+    echo "  No se introdujo token. Puedes configurar despues."
     echo "  Ejecuta: $INSTALL_DIR/scripts/setup-auth.sh"
   else
-    # Validate token via Supabase RPC
-    echo "  Validando token..."
+    # Validate token silently
     VALIDATION=$(curl -s "$SB_URL/rest/v1/rpc/validate_setup_token" \
       -H "apikey: $SB_ANON_KEY" \
       -H "Authorization: Bearer $SB_ANON_KEY" \
@@ -190,25 +190,27 @@ if [[ "$SKIP_SETUP" != "true" ]]; then
     VALID=$(echo "$VALIDATION" | jq -r '.valid // false')
 
     if [[ "$VALID" != "true" ]]; then
-      ERROR_MSG=$(echo "$VALIDATION" | jq -r '.error // "Token invalido"')
-      echo "  Token invalido: $ERROR_MSG"
-      echo "  Genera uno nuevo desde el dashboard y ejecuta: $INSTALL_DIR/scripts/setup-auth.sh"
+      echo ""
+      echo "  El enlace de instalacion ha expirado o ya fue usado."
+      echo "  Genera uno nuevo en: https://prophunt-app.netlify.app/dashboard"
+      echo "  (Menu: Configuracion → Generar token)"
     else
       USER_EMAIL=$(echo "$VALIDATION" | jq -r '.email')
-      echo "  Token valido para: $USER_EMAIL"
       echo ""
-      read -sp "  Contrasena de $USER_EMAIL: " USER_PASSWORD < /dev/tty
+      echo "  Cuenta: $USER_EMAIL"
+      echo "  Introduce la contrasena que usaste al registrarte."
+      echo ""
+      read -sp "  Contrasena: " USER_PASSWORD < /dev/tty
       echo ""
 
-      # Validate password via Supabase Auth
+      # Validate password
       AUTH_RESULT=$(curl -s "$SB_URL/auth/v1/token?grant_type=password" \
         -H "apikey: $SB_ANON_KEY" \
         -H "Content-Type: application/json" \
         -d "{\"email\": \"$USER_EMAIL\", \"password\": \"$USER_PASSWORD\"}")
 
       if echo "$AUTH_RESULT" | jq -e '.access_token' > /dev/null 2>&1; then
-        echo "  Autenticacion OK"
-        # Write .env with credentials
+        echo "  Cuenta vinculada correctamente"
         cat > .env <<ENVEOF
 IDEALISTA_API_KEY=
 IDEALISTA_SECRET=
@@ -219,7 +221,6 @@ SUPABASE_ANON_KEY=$SB_ANON_KEY
 PROPHUNT_EMAIL=$USER_EMAIL
 PROPHUNT_PASSWORD=$USER_PASSWORD
 ENVEOF
-        echo "  .env configurado automaticamente"
       else
         echo "  Contrasena incorrecta. Puedes configurar despues: $INSTALL_DIR/scripts/setup-auth.sh"
       fi
