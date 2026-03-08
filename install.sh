@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # ═══════════════════════════════════════════════════════
 #  AI PropHunt — Instalador remoto
@@ -13,6 +12,7 @@ set -e
 REPO="jorgetebl/ai-prophunt"
 INSTALL_DIR="$HOME/ai-prophunt"
 BRANCH="main"
+ERRORS=()
 
 # Supabase (public keys — safe to hardcode)
 SB_URL="https://uolymolzgesvxucmbcgw.supabase.co"
@@ -49,11 +49,15 @@ if command -v brew &>/dev/null; then
   echo "       Ya instalado"
 else
   echo "       Instalando Homebrew (puede pedir contraseña del Mac)..."
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  # Add to PATH for Apple Silicon
-  if [[ -f /opt/homebrew/bin/brew ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
+  if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+    # Add to PATH for Apple Silicon
+    if [[ -f /opt/homebrew/bin/brew ]]; then
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+      echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
+    fi
+  else
+    echo "       ERROR: No se pudo instalar Homebrew"
+    ERRORS+=("Homebrew")
   fi
 fi
 
@@ -62,8 +66,13 @@ echo "[2/9] Node.js..."
 if command -v node &>/dev/null; then
   echo "       Ya instalado ($(node -v))"
 else
-  echo "       Instalando..."
-  brew install node
+  if command -v brew &>/dev/null; then
+    echo "       Instalando..."
+    brew install node || { echo "       ERROR: No se pudo instalar Node.js"; ERRORS+=("Node.js"); }
+  else
+    echo "       ERROR: Necesita Homebrew para instalar Node.js"
+    ERRORS+=("Node.js")
+  fi
 fi
 
 # ── jq ──
@@ -71,7 +80,12 @@ echo "[3/9] jq..."
 if command -v jq &>/dev/null; then
   echo "       Ya instalado"
 else
-  brew install jq
+  if command -v brew &>/dev/null; then
+    brew install jq || { echo "       ERROR: No se pudo instalar jq"; ERRORS+=("jq"); }
+  else
+    echo "       ERROR: Necesita Homebrew para instalar jq"
+    ERRORS+=("jq")
+  fi
 fi
 
 # ── Claude Code CLI ──
@@ -79,8 +93,13 @@ echo "[4/9] Claude Code CLI..."
 if command -v claude &>/dev/null; then
   echo "       Ya instalado"
 else
-  echo "       Instalando..."
-  npm install -g @anthropic-ai/claude-code
+  if command -v npm &>/dev/null; then
+    echo "       Instalando..."
+    npm install -g @anthropic-ai/claude-code || { echo "       ERROR: No se pudo instalar Claude Code"; ERRORS+=("Claude Code CLI"); }
+  else
+    echo "       ERROR: Necesita Node.js/npm para instalar Claude Code"
+    ERRORS+=("Claude Code CLI")
+  fi
 fi
 
 # ── wacli ──
@@ -88,12 +107,18 @@ echo "[5/9] wacli (WhatsApp CLI)..."
 if command -v wacli &>/dev/null; then
   echo "       Ya instalado"
 else
-  echo "       Instalando..."
-  brew install steipete/tap/wacli
+  if command -v brew &>/dev/null; then
+    echo "       Instalando..."
+    brew install steipete/tap/wacli || { echo "       ERROR: No se pudo instalar wacli"; ERRORS+=("wacli"); }
+  else
+    echo "       ERROR: Necesita Homebrew para instalar wacli"
+    ERRORS+=("wacli")
+  fi
 fi
 
 # ── Descargar proyecto ──
 echo "[6/9] Descargando AI PropHunt..."
+DOWNLOAD_OK=true
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   echo "       Ya existe en $INSTALL_DIR, actualizando..."
   cd "$INSTALL_DIR" && git pull origin "$BRANCH" 2>/dev/null || true
@@ -105,9 +130,9 @@ else
 
   if command -v git &>/dev/null; then
     if [[ -n "$GH_TOKEN" ]]; then
-      git clone "https://$GH_TOKEN@github.com/$REPO.git" "$INSTALL_DIR"
+      git clone "https://$GH_TOKEN@github.com/$REPO.git" "$INSTALL_DIR" || DOWNLOAD_OK=false
     else
-      git clone "https://github.com/$REPO.git" "$INSTALL_DIR"
+      git clone "https://github.com/$REPO.git" "$INSTALL_DIR" || DOWNLOAD_OK=false
     fi
   else
     # Sin git: descargar ZIP
@@ -118,10 +143,20 @@ else
     else
       curl -sL "$ZIP_URL" -o /tmp/prophunt.zip
     fi
-    unzip -q /tmp/prophunt.zip -d /tmp/prophunt_extract
-    mv /tmp/prophunt_extract/ai-prophunt-$BRANCH "$INSTALL_DIR"
-    rm -rf /tmp/prophunt.zip /tmp/prophunt_extract
+    if unzip -q /tmp/prophunt.zip -d /tmp/prophunt_extract 2>/dev/null; then
+      mv /tmp/prophunt_extract/ai-prophunt-$BRANCH "$INSTALL_DIR"
+      rm -rf /tmp/prophunt.zip /tmp/prophunt_extract
+    else
+      DOWNLOAD_OK=false
+      rm -rf /tmp/prophunt.zip /tmp/prophunt_extract
+    fi
   fi
+fi
+
+if [[ "$DOWNLOAD_OK" != "true" ]]; then
+  echo ""
+  echo "  ERROR: No se pudo descargar el proyecto. Abortando."
+  exit 1
 fi
 
 cd "$INSTALL_DIR"
@@ -143,7 +178,10 @@ npm install --silent 2>/dev/null || true
 
 # ── Vincular WhatsApp ──
 echo "[8/9] Vinculando WhatsApp..."
-if wacli doctor 2>&1 | grep -qi "connected\|authenticated\|ok"; then
+if ! command -v wacli &>/dev/null; then
+  echo "       wacli no disponible, saltando. Instala wacli y ejecuta: wacli auth"
+  ERRORS+=("WhatsApp (wacli no instalado)")
+elif wacli doctor 2>&1 | grep -qi "connected\|authenticated\|ok"; then
   echo "       Ya vinculado"
 else
   echo ""
@@ -155,6 +193,13 @@ fi
 
 # ── Vincular cuenta ──
 echo "[9/9] Vinculando cuenta..."
+
+if ! command -v jq &>/dev/null; then
+  echo "       jq no disponible, no se puede validar token."
+  echo "       Instala jq y ejecuta: $INSTALL_DIR/scripts/setup-auth.sh"
+  ERRORS+=("Vinculacion de cuenta (jq no instalado)")
+  SKIP_SETUP=true
+fi
 
 # Check if .env already has valid credentials
 if [[ -f .env ]] && grep -q "PROPHUNT_EMAIL=.\+" .env && grep -q "PROPHUNT_PASSWORD=.\+" .env; then
@@ -229,9 +274,22 @@ ENVEOF
 fi
 
 echo ""
-echo "  ╔══════════════════════════════════════╗"
-echo "  ║   Instalacion completada!            ║"
-echo "  ╚══════════════════════════════════════╝"
+if [[ ${#ERRORS[@]} -eq 0 ]]; then
+  echo "  ╔══════════════════════════════════════╗"
+  echo "  ║   Instalacion completada!            ║"
+  echo "  ╚══════════════════════════════════════╝"
+else
+  echo "  ╔══════════════════════════════════════╗"
+  echo "  ║   Instalacion completada con avisos  ║"
+  echo "  ╚══════════════════════════════════════╝"
+  echo ""
+  echo "  Los siguientes componentes no se pudieron instalar:"
+  for err in "${ERRORS[@]}"; do
+    echo "    - $err"
+  done
+  echo ""
+  echo "  Puedes instalarlos manualmente despues."
+fi
 echo ""
 echo "  Ubicacion: $INSTALL_DIR"
 echo ""

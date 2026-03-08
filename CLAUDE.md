@@ -113,6 +113,11 @@ Después de cada acción (éxito o fallo), actualizar:
 09:30 - Done. 6/8 processed, 5 sent, 1 duplicate, 2 failed (no phone)
 ```
 
+## GitHub
+
+- **Siempre usar la cuenta `meetzyio`** para operaciones con `gh` (push, pull, etc.)
+- Repo: `jorgetebl/ai-prophunt` (meetzyio tiene acceso como colaborador)
+
 ## Reglas de seguridad
 
 - **NUNCA enviar más de 15 mensajes en un día** (config.json → max_contacts_per_day)
