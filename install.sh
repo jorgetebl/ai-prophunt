@@ -176,8 +176,37 @@ fi
 
 npm install --silent 2>/dev/null || true
 
+# ── Instalar app de barra de menú ──
+echo "[8/10] Instalando app de barra de menú..."
+MENUBAR_APP="$INSTALL_DIR/menubar/PropHunt.app"
+APPS_DEST="/Applications/PropHunt.app"
+
+if [[ -d "$MENUBAR_APP" ]]; then
+  cp -r "$MENUBAR_APP" "$APPS_DEST" 2>/dev/null || sudo cp -r "$MENUBAR_APP" "$APPS_DEST"
+  xattr -rd com.apple.quarantine "$APPS_DEST" 2>/dev/null || true
+  # Auto-arrancar con el Mac
+  osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$APPS_DEST\", hidden:true}" 2>/dev/null || true
+  # Lanzar ahora
+  open "$APPS_DEST" 2>/dev/null || true
+  echo "       Instalado en /Applications/PropHunt.app — aparece en la barra superior"
+elif command -v swiftc &>/dev/null && [[ -f "$INSTALL_DIR/menubar/PropHuntAgent.swift" ]]; then
+  echo "       Compilando app (esto puede tardar un momento)..."
+  if bash "$INSTALL_DIR/menubar/build.sh" &>/dev/null; then
+    cp -r "$INSTALL_DIR/menubar/PropHunt.app" "$APPS_DEST" 2>/dev/null || sudo cp -r "$INSTALL_DIR/menubar/PropHunt.app" "$APPS_DEST"
+    xattr -rd com.apple.quarantine "$APPS_DEST" 2>/dev/null || true
+    osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$APPS_DEST\", hidden:true}" 2>/dev/null || true
+    open "$APPS_DEST" 2>/dev/null || true
+    echo "       Instalado en /Applications/PropHunt.app — aparece en la barra superior"
+  else
+    echo "       No se pudo compilar. Saltando."
+    ERRORS+=("App barra de menú (error compilando)")
+  fi
+else
+  echo "       No disponible en esta version. Saltando."
+fi
+
 # ── Vincular WhatsApp ──
-echo "[8/9] Vinculando WhatsApp..."
+echo "[9/10] Vinculando WhatsApp..."
 if ! command -v wacli &>/dev/null; then
   echo "       wacli no disponible, saltando. Instala wacli y ejecuta: wacli auth"
   ERRORS+=("WhatsApp (wacli no instalado)")
@@ -192,7 +221,7 @@ else
 fi
 
 # ── Vincular cuenta ──
-echo "[9/9] Vinculando cuenta..."
+echo "[10/10] Vinculando cuenta..."
 
 if ! command -v jq &>/dev/null; then
   echo "       jq no disponible, no se puede validar token."

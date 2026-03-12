@@ -1,6 +1,8 @@
 node_modules/
 .env
 .DS_Store
+menubar/PropHunt.app/Contents/MacOS/PropHunt
+menubar/prophunt-agent
 
 # Datos locales del usuario (no sobreescribir con updates)
 data/contacted.json
