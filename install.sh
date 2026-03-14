@@ -37,13 +37,7 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 1
 fi
 
-# ── Detectar arquitectura ──
-ARCH=$(uname -m)
-if [[ "$ARCH" == "arm64" ]]; then
-  BINARY_NAME="prophunt-macos-arm64"
-else
-  BINARY_NAME="prophunt-macos-x64"
-fi
+# No native binary needed — Node is installed by this script
 
 # ── 1. Homebrew ──
 echo "[1/5] Homebrew..."
@@ -88,15 +82,17 @@ echo "[4/5] Descargando AI PropHunt..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/data/logs"
 
-# Descargar binario del servidor
-BINARY_PATH="$INSTALL_DIR/prophunt-server"
-echo "       Descargando servidor ($BINARY_NAME)..."
-if curl -sL "$RELEASES_URL/$BINARY_NAME" -o "$BINARY_PATH"; then
-  chmod +x "$BINARY_PATH"
+# Descargar servidor (bundle + launcher)
+echo "       Descargando servidor..."
+BUNDLE_OK=true
+curl -sL "$RELEASES_URL/server.bundle.cjs" -o "$INSTALL_DIR/server.bundle.cjs" || BUNDLE_OK=false
+curl -sL "$RELEASES_URL/prophunt-server" -o "$INSTALL_DIR/prophunt-server" || BUNDLE_OK=false
+if [[ "$BUNDLE_OK" == "true" ]]; then
+  chmod +x "$INSTALL_DIR/prophunt-server"
   echo "       Servidor OK"
 else
-  echo "       ERROR: No se pudo descargar el binario"
-  ERRORS+=("Servidor (binario)")
+  echo "       ERROR: No se pudo descargar el servidor"
+  ERRORS+=("Servidor")
 fi
 
 # Descargar extensión de Chrome

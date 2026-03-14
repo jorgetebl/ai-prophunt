@@ -36,21 +36,16 @@ execSync(
   { cwd: ROOT, stdio: 'inherit' }
 );
 
-// ── Step 2: Compile to native binary (CI only) ────────────────────────────────
-// pkg is blocked by macOS SIP/Gatekeeper locally. Run in GitHub Actions.
-if (IS_CI) {
-  console.log('Step 2/3 — Compiling to native binaries with pkg...');
-  execSync(
-    `npx pkg dist/server.bundle.cjs \
-      --targets node20-macos-arm64,node20-macos-x64 \
-      --output dist/prophunt \
-      --compress GZip`,
-    { cwd: ROOT, stdio: 'inherit' }
-  );
-} else {
-  console.log('Step 2/3 — Skipping pkg binary (only runs in CI).');
-  console.log('           Push to main to trigger GitHub Actions build.');
-}
+// ── Step 2: Create launcher script ───────────────────────────────────────────
+// The bundle runs with the system Node (installed by install.sh).
+// A tiny launcher script makes it feel like a native binary.
+console.log('Step 2/3 — Creating launcher script...');
+const launcher = `#!/bin/bash
+exec node "$(dirname "$0")/server.bundle.cjs" "$@"
+`;
+import { writeFileSync, chmodSync } from 'node:fs';
+writeFileSync(join(DIST, 'prophunt-server'), launcher);
+chmodSync(join(DIST, 'prophunt-server'), 0o755);
 
 // ── Step 3: Package Chrome extension ─────────────────────────────────────────
 console.log('Step 3/3 — Packaging chrome extension...');
