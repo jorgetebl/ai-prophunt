@@ -1,20 +1,16 @@
 #!/bin/bash
 
 # ═══════════════════════════════════════════════════════
-#  AI PropHunt — Instalador remoto
-#
-#  Uso:
-#    curl -sL URL | bash
-#    o
-#    curl -sL URL | bash -s -- --token GITHUB_PAT
+#  AI PropHunt — Instalador
+#  Uso: curl -sL URL | bash -s -- --setup-token TOKEN
 # ═══════════════════════════════════════════════════════
 
 REPO="jorgetebl/ai-prophunt"
 INSTALL_DIR="$HOME/ai-prophunt"
-BRANCH="main"
+RELEASES_URL="https://github.com/$REPO/releases/download/latest"
 ERRORS=()
 
-# Supabase (public keys — safe to hardcode)
+# Supabase (public — safe to hardcode)
 SB_URL="https://uolymolzgesvxucmbcgw.supabase.co"
 SB_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvbHltb2x6Z2Vzdnh1Y21iY2d3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NDcwMzgsImV4cCI6MjA4ODQyMzAzOH0.kQfyigV6A6MgnMk2oZaRhCcCla3VcAk2zhtPkFfe9Gc"
 
@@ -25,32 +21,37 @@ echo "  ║   REMAX Experience                   ║"
 echo "  ╚══════════════════════════════════════╝"
 echo ""
 
-# Parse args
-GH_TOKEN=""
+# ── Args ──
 SETUP_TOKEN_ARG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --token) GH_TOKEN="$2"; shift 2 ;;
-    --dir) INSTALL_DIR="$2"; shift 2 ;;
     --setup-token) SETUP_TOKEN_ARG="$2"; shift 2 ;;
+    --dir) INSTALL_DIR="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
 
-# ── macOS check ──
+# ── macOS only ──
 if [[ "$(uname)" != "Darwin" ]]; then
   echo "Este instalador es solo para macOS."
   exit 1
 fi
 
-# ── Homebrew ──
-echo "[1/9] Homebrew..."
+# ── Detectar arquitectura ──
+ARCH=$(uname -m)
+if [[ "$ARCH" == "arm64" ]]; then
+  BINARY_NAME="prophunt-macos-arm64"
+else
+  BINARY_NAME="prophunt-macos-x64"
+fi
+
+# ── 1. Homebrew ──
+echo "[1/5] Homebrew..."
 if command -v brew &>/dev/null; then
   echo "       Ya instalado"
 else
   echo "       Instalando Homebrew (puede pedir contraseña del Mac)..."
   if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
-    # Add to PATH for Apple Silicon
     if [[ -f /opt/homebrew/bin/brew ]]; then
       eval "$(/opt/homebrew/bin/brew shellenv)"
       echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
@@ -61,247 +62,167 @@ else
   fi
 fi
 
-# ── Node.js ──
-echo "[2/9] Node.js..."
-if command -v node &>/dev/null; then
-  echo "       Ya instalado ($(node -v))"
-else
-  if command -v brew &>/dev/null; then
-    echo "       Instalando..."
-    brew install node || { echo "       ERROR: No se pudo instalar Node.js"; ERRORS+=("Node.js"); }
-  else
-    echo "       ERROR: Necesita Homebrew para instalar Node.js"
-    ERRORS+=("Node.js")
-  fi
-fi
-
-# ── jq ──
-echo "[3/9] jq..."
+# ── 2. jq ──
+echo "[2/5] jq..."
 if command -v jq &>/dev/null; then
   echo "       Ya instalado"
 else
-  if command -v brew &>/dev/null; then
-    brew install jq || { echo "       ERROR: No se pudo instalar jq"; ERRORS+=("jq"); }
-  else
-    echo "       ERROR: Necesita Homebrew para instalar jq"
-    ERRORS+=("jq")
-  fi
+  command -v brew &>/dev/null && brew install jq || { echo "       ERROR"; ERRORS+=("jq"); }
 fi
 
-# ── Claude Code CLI ──
-echo "[4/9] Claude Code CLI..."
-if command -v claude &>/dev/null; then
-  echo "       Ya instalado"
-else
-  if command -v npm &>/dev/null; then
-    echo "       Instalando..."
-    npm install -g @anthropic-ai/claude-code || { echo "       ERROR: No se pudo instalar Claude Code"; ERRORS+=("Claude Code CLI"); }
-  else
-    echo "       ERROR: Necesita Node.js/npm para instalar Claude Code"
-    ERRORS+=("Claude Code CLI")
-  fi
-fi
-
-# ── wacli ──
-echo "[5/9] wacli (WhatsApp CLI)..."
+# ── 3. wacli ──
+echo "[3/5] wacli (WhatsApp CLI)..."
 if command -v wacli &>/dev/null; then
   echo "       Ya instalado"
 else
   if command -v brew &>/dev/null; then
-    echo "       Instalando..."
     brew install steipete/tap/wacli || { echo "       ERROR: No se pudo instalar wacli"; ERRORS+=("wacli"); }
   else
-    echo "       ERROR: Necesita Homebrew para instalar wacli"
-    ERRORS+=("wacli")
+    echo "       ERROR: Necesita Homebrew"; ERRORS+=("wacli")
   fi
 fi
 
-# ── Descargar proyecto ──
-echo "[6/9] Descargando AI PropHunt..."
-DOWNLOAD_OK=true
-if [[ -d "$INSTALL_DIR/.git" ]]; then
-  echo "       Ya existe en $INSTALL_DIR, actualizando..."
-  cd "$INSTALL_DIR" && git pull origin "$BRANCH" 2>/dev/null || true
+# ── 4. Descargar binario y extensión ──
+echo "[4/5] Descargando AI PropHunt..."
+
+mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR/data/logs"
+
+# Descargar binario del servidor
+BINARY_PATH="$INSTALL_DIR/prophunt-server"
+echo "       Descargando servidor ($BINARY_NAME)..."
+if curl -sL "$RELEASES_URL/$BINARY_NAME" -o "$BINARY_PATH"; then
+  chmod +x "$BINARY_PATH"
+  echo "       Servidor OK"
 else
-  if [[ -d "$INSTALL_DIR" ]]; then
-    echo "       Directorio existe pero no es git, haciendo backup..."
-    mv "$INSTALL_DIR" "$INSTALL_DIR.bak.$(date +%s)"
-  fi
-
-  if command -v git &>/dev/null; then
-    if [[ -n "$GH_TOKEN" ]]; then
-      git clone "https://$GH_TOKEN@github.com/$REPO.git" "$INSTALL_DIR" || DOWNLOAD_OK=false
-    else
-      git clone "https://github.com/$REPO.git" "$INSTALL_DIR" || DOWNLOAD_OK=false
-    fi
-  else
-    # Sin git: descargar ZIP
-    echo "       git no disponible, descargando ZIP..."
-    ZIP_URL="https://github.com/$REPO/archive/refs/heads/$BRANCH.zip"
-    if [[ -n "$GH_TOKEN" ]]; then
-      curl -sL -H "Authorization: token $GH_TOKEN" "$ZIP_URL" -o /tmp/prophunt.zip
-    else
-      curl -sL "$ZIP_URL" -o /tmp/prophunt.zip
-    fi
-    if unzip -q /tmp/prophunt.zip -d /tmp/prophunt_extract 2>/dev/null; then
-      mv /tmp/prophunt_extract/ai-prophunt-$BRANCH "$INSTALL_DIR"
-      rm -rf /tmp/prophunt.zip /tmp/prophunt_extract
-    else
-      DOWNLOAD_OK=false
-      rm -rf /tmp/prophunt.zip /tmp/prophunt_extract
-    fi
-  fi
+  echo "       ERROR: No se pudo descargar el binario"
+  ERRORS+=("Servidor (binario)")
 fi
 
-if [[ "$DOWNLOAD_OK" != "true" ]]; then
-  echo ""
-  echo "  ERROR: No se pudo descargar el proyecto. Abortando."
-  exit 1
-fi
-
-cd "$INSTALL_DIR"
-
-# ── Configurar proyecto ──
-echo "[7/9] Configurando proyecto..."
-chmod +x run.sh setup.sh scripts/*.sh 2>/dev/null || true
-mkdir -p data/logs
-
-if [[ ! -f config.json ]] && [[ -f config.example.json ]]; then
-  cp config.example.json config.json
-fi
-
-if [[ ! -f data/contacted.json ]]; then
-  echo '{"contacts":[]}' > data/contacted.json
-fi
-
-npm install --silent 2>/dev/null || true
-
-# ── Instalar app de barra de menú ──
-echo "[8/10] Instalando app de barra de menú..."
-MENUBAR_APP="$INSTALL_DIR/menubar/PropHunt.app"
-APPS_DEST="/Applications/PropHunt.app"
-
-if [[ -d "$MENUBAR_APP" ]]; then
-  cp -r "$MENUBAR_APP" "$APPS_DEST" 2>/dev/null || sudo cp -r "$MENUBAR_APP" "$APPS_DEST"
-  xattr -rd com.apple.quarantine "$APPS_DEST" 2>/dev/null || true
-  # Auto-arrancar con el Mac
-  osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$APPS_DEST\", hidden:true}" 2>/dev/null || true
-  # Lanzar ahora
-  open "$APPS_DEST" 2>/dev/null || true
-  echo "       Instalado en /Applications/PropHunt.app — aparece en la barra superior"
-elif command -v swiftc &>/dev/null && [[ -f "$INSTALL_DIR/menubar/PropHuntAgent.swift" ]]; then
-  echo "       Compilando app (esto puede tardar un momento)..."
-  if bash "$INSTALL_DIR/menubar/build.sh" &>/dev/null; then
-    cp -r "$INSTALL_DIR/menubar/PropHunt.app" "$APPS_DEST" 2>/dev/null || sudo cp -r "$INSTALL_DIR/menubar/PropHunt.app" "$APPS_DEST"
-    xattr -rd com.apple.quarantine "$APPS_DEST" 2>/dev/null || true
-    osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$APPS_DEST\", hidden:true}" 2>/dev/null || true
-    open "$APPS_DEST" 2>/dev/null || true
-    echo "       Instalado en /Applications/PropHunt.app — aparece en la barra superior"
-  else
-    echo "       No se pudo compilar. Saltando."
-    ERRORS+=("App barra de menú (error compilando)")
-  fi
+# Descargar extensión de Chrome
+EXT_ZIP="/tmp/prophunt-ext.zip"
+EXT_DIR="$INSTALL_DIR/chrome-extension"
+echo "       Descargando extensión Chrome..."
+if curl -sL "$RELEASES_URL/chrome-extension.zip" -o "$EXT_ZIP"; then
+  mkdir -p "$EXT_DIR"
+  unzip -q -o "$EXT_ZIP" -d "$EXT_DIR"
+  rm -f "$EXT_ZIP"
+  echo "       Extensión OK"
 else
-  echo "       No disponible en esta version. Saltando."
+  echo "       ERROR: No se pudo descargar la extensión"
+  ERRORS+=("Extensión Chrome")
 fi
 
-# ── Vincular WhatsApp ──
-echo "[9/10] Vinculando WhatsApp..."
-if ! command -v wacli &>/dev/null; then
-  echo "       wacli no disponible, saltando. Instala wacli y ejecuta: wacli auth"
-  ERRORS+=("WhatsApp (wacli no instalado)")
-elif wacli doctor 2>&1 | grep -qi "connected\|authenticated\|ok"; then
-  echo "       Ya vinculado"
-else
-  echo ""
-  echo "  Necesitas escanear un QR con WhatsApp para vincular."
-  echo "  Se abrira el proceso de autenticacion de wacli."
-  echo ""
-  wacli auth < /dev/tty || echo "       No se pudo vincular. Puedes hacerlo despues con: wacli auth"
+# Descargar config de ejemplo si no existe
+if [[ ! -f "$INSTALL_DIR/config.json" ]]; then
+  curl -sL "https://raw.githubusercontent.com/$REPO/main/config.example.json" \
+    -o "$INSTALL_DIR/config.json" 2>/dev/null || true
 fi
 
-# ── Vincular cuenta ──
-echo "[10/10] Vinculando cuenta..."
+# Descargar templates
+mkdir -p "$INSTALL_DIR/templates"
+curl -sL "https://raw.githubusercontent.com/$REPO/main/templates/whatsapp.txt" \
+  -o "$INSTALL_DIR/templates/whatsapp.txt" 2>/dev/null || true
 
-if ! command -v jq &>/dev/null; then
-  echo "       jq no disponible, no se puede validar token."
-  echo "       Instala jq y ejecuta: $INSTALL_DIR/scripts/setup-auth.sh"
-  ERRORS+=("Vinculacion de cuenta (jq no instalado)")
-  SKIP_SETUP=true
-fi
+# Datos iniciales
+[[ ! -f "$INSTALL_DIR/data/contacted.json" ]] && echo '{"contacts":[]}' > "$INSTALL_DIR/data/contacted.json"
 
-# Check if .env already has valid credentials
-if [[ -f .env ]] && grep -q "PROPHUNT_EMAIL=.\+" .env && grep -q "PROPHUNT_PASSWORD=.\+" .env; then
+# Descargar run.sh
+curl -sL "https://raw.githubusercontent.com/$REPO/main/run.sh" \
+  -o "$INSTALL_DIR/run.sh" 2>/dev/null && chmod +x "$INSTALL_DIR/run.sh" || true
+
+# ── 5. Vincular cuenta ──
+echo "[5/5] Vinculando cuenta..."
+
+SKIP_SETUP=false
+if [[ -f "$INSTALL_DIR/.env" ]] && grep -q "PROPHUNT_EMAIL=.\+" "$INSTALL_DIR/.env" 2>/dev/null; then
   echo "       Ya configurado"
   SKIP_SETUP=true
 fi
 
 if [[ "$SKIP_SETUP" != "true" ]]; then
-  # Get token (from arg or ask)
   if [[ -n "$SETUP_TOKEN_ARG" ]]; then
     SETUP_TOKEN="$SETUP_TOKEN_ARG"
   else
     echo ""
-    echo "  Necesitas un token de instalacion para vincular tu Mac."
-    echo "  Lo puedes obtener en: https://prophunt-app.netlify.app/dashboard"
-    echo "  (Menu: Configuracion → Generar token)"
+    echo "  Necesitas un token de instalacion."
+    echo "  Generalo en: https://prophunt-app.netlify.app/dashboard"
     echo ""
-    read -p "  Token de instalacion: " SETUP_TOKEN < /dev/tty
+    read -p "  Token: " SETUP_TOKEN < /dev/tty
   fi
 
   if [[ -z "$SETUP_TOKEN" ]]; then
-    echo ""
-    echo "  No se introdujo token. Puedes configurar despues."
-    echo "  Ejecuta: $INSTALL_DIR/scripts/setup-auth.sh"
+    echo "  Sin token. Configura despues ejecutando: $INSTALL_DIR/run.sh setup"
   else
-    # Validate token silently
     VALIDATION=$(curl -s "$SB_URL/rest/v1/rpc/validate_setup_token" \
       -H "apikey: $SB_ANON_KEY" \
       -H "Authorization: Bearer $SB_ANON_KEY" \
       -H "Content-Type: application/json" \
       -d "{\"setup_token\": \"$SETUP_TOKEN\"}")
 
-    VALID=$(echo "$VALIDATION" | jq -r '.valid // false')
-
+    VALID=$(echo "$VALIDATION" | jq -r '.valid // false' 2>/dev/null)
     if [[ "$VALID" != "true" ]]; then
-      echo ""
-      echo "  El enlace de instalacion ha expirado o ya fue usado."
-      echo "  Genera uno nuevo en: https://prophunt-app.netlify.app/dashboard"
-      echo "  (Menu: Configuracion → Generar token)"
+      echo "  Token invalido o expirado. Genera uno nuevo en el dashboard."
+      ERRORS+=("Vinculacion de cuenta")
     else
       USER_EMAIL=$(echo "$VALIDATION" | jq -r '.email')
-      echo ""
       echo "  Cuenta: $USER_EMAIL"
-      echo "  Introduce la contrasena que usaste al registrarte."
-      echo ""
-      read -sp "  Contrasena: " USER_PASSWORD < /dev/tty
+      read -sp "  Contrasena de PropHunt: " USER_PASSWORD < /dev/tty
       echo ""
 
-      # Validate password
       AUTH_RESULT=$(curl -s "$SB_URL/auth/v1/token?grant_type=password" \
         -H "apikey: $SB_ANON_KEY" \
         -H "Content-Type: application/json" \
         -d "{\"email\": \"$USER_EMAIL\", \"password\": \"$USER_PASSWORD\"}")
 
       if echo "$AUTH_RESULT" | jq -e '.access_token' > /dev/null 2>&1; then
-        echo "  Cuenta vinculada correctamente"
-        cat > .env <<ENVEOF
-IDEALISTA_API_KEY=
-IDEALISTA_SECRET=
-
-# Supabase (configurado automaticamente)
+        echo "  Cuenta vinculada"
+        cat > "$INSTALL_DIR/.env" <<ENVEOF
+# Supabase
 SUPABASE_URL=$SB_URL
 SUPABASE_ANON_KEY=$SB_ANON_KEY
 PROPHUNT_EMAIL=$USER_EMAIL
 PROPHUNT_PASSWORD=$USER_PASSWORD
 ENVEOF
       else
-        echo "  Contrasena incorrecta. Puedes configurar despues: $INSTALL_DIR/scripts/setup-auth.sh"
+        echo "  Contrasena incorrecta."
+        ERRORS+=("Vinculacion de cuenta")
       fi
     fi
   fi
 fi
 
+# ── Instalar app de barra de menú ──
+MENUBAR_APP="$INSTALL_DIR/PropHunt.app"
+APPS_DEST="/Applications/PropHunt.app"
+# (descargado como parte del release si existe)
+MENUBAR_URL="$RELEASES_URL/PropHunt.app.zip"
+if curl -sI "$MENUBAR_URL" 2>/dev/null | grep -q "200 OK"; then
+  curl -sL "$MENUBAR_URL" -o /tmp/prophunt-app.zip
+  unzip -q /tmp/prophunt-app.zip -d /tmp/prophunt-app-extract
+  cp -r /tmp/prophunt-app-extract/PropHunt.app "$APPS_DEST" 2>/dev/null \
+    || sudo cp -r /tmp/prophunt-app-extract/PropHunt.app "$APPS_DEST"
+  xattr -rd com.apple.quarantine "$APPS_DEST" 2>/dev/null || true
+  osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$APPS_DEST\", hidden:true}" 2>/dev/null || true
+  open "$APPS_DEST" 2>/dev/null || true
+  rm -rf /tmp/prophunt-app.zip /tmp/prophunt-app-extract
+fi
+
+# ── Vincular WhatsApp ──
+echo ""
+echo "Vinculando WhatsApp..."
+if ! command -v wacli &>/dev/null; then
+  echo "  wacli no disponible. Instala wacli y ejecuta: wacli auth"
+  ERRORS+=("WhatsApp (wacli no instalado)")
+elif wacli doctor 2>&1 | grep -qi "connected\|authenticated\|ok"; then
+  echo "  Ya vinculado"
+else
+  echo "  Escanea el QR con tu WhatsApp para vincular:"
+  echo ""
+  wacli auth < /dev/tty || echo "  Puedes vincularlo despues: wacli auth"
+fi
+
+# ── Resultado ──
 echo ""
 if [[ ${#ERRORS[@]} -eq 0 ]]; then
   echo "  ╔══════════════════════════════════════╗"
@@ -309,28 +230,21 @@ if [[ ${#ERRORS[@]} -eq 0 ]]; then
   echo "  ╚══════════════════════════════════════╝"
 else
   echo "  ╔══════════════════════════════════════╗"
-  echo "  ║   Instalacion completada con avisos  ║"
+  echo "  ║   Completado con avisos              ║"
   echo "  ╚══════════════════════════════════════╝"
   echo ""
-  echo "  Los siguientes componentes no se pudieron instalar:"
-  for err in "${ERRORS[@]}"; do
-    echo "    - $err"
-  done
-  echo ""
-  echo "  Puedes instalarlos manualmente despues."
+  for err in "${ERRORS[@]}"; do echo "  - $err"; done
 fi
 echo ""
-echo "  Ubicacion: $INSTALL_DIR"
+echo "  Directorio: $INSTALL_DIR"
 echo ""
-echo "  Pasos pendientes:"
+echo "  Ultimo paso — carga la extension en Chrome:"
+echo "    1. Abre Chrome → chrome://extensions"
+echo "    2. Activa 'Modo desarrollador' (arriba derecha)"
+echo "    3. Pulsa 'Cargar descomprimida'"
+echo "    4. Selecciona: $INSTALL_DIR/chrome-extension"
 echo ""
-echo "  1. Instalar extension Claude en Chrome:"
-echo "     https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn"
+echo "  Luego loguéate en idealista.com, fotocasa.es y pisos.com."
 echo ""
-echo "  2. Loguearte en los portales inmobiliarios en Chrome:"
-echo "     idealista.com, fotocasa.es, pisos.com"
-echo "     (necesario para poder ver telefonos de vendedores)"
-echo ""
-echo "  El sistema se ejecutara automaticamente cada dia."
-echo "  Para probarlo manualmente: cd $INSTALL_DIR && ./run.sh test"
+echo "  Para probar: cd $INSTALL_DIR && ./run.sh test"
 echo ""

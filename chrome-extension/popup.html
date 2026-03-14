@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>AI PropHunt</title>
+<style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  width: 220px;
+  padding: 16px;
+  margin: 0;
+  background: #0f0f1a;
+  color: #fff;
+}
+h1 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  flex-shrink: 0;
+}
+.dot.connected { background: #22c55e; }
+#statusText { color: rgba(255,255,255,0.7); }
+</style>
+</head>
+<body>
+<h1>AI PropHunt</h1>
+<div class="status">
+  <div class="dot" id="dot"></div>
+  <span id="statusText">Comprobando...</span>
+</div>
+<script>
+async function checkServer() {
+  try {
+    const res = await fetch('http://localhost:3456/health', { signal: AbortSignal.timeout(2000) });
+    if (res.ok) {
+      document.getElementById('dot').classList.add('connected');
+      document.getElementById('statusText').textContent = 'Servidor conectado';
+    } else {
+      document.getElementById('statusText').textContent = 'Error del servidor';
+    }
+  } catch {
+    document.getElementById('statusText').textContent = 'Servidor desconectado';
+  }
+}
+checkServer();
+</script>
+</body>
+</html>

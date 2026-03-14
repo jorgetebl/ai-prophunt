@@ -345,6 +345,133 @@ body {
   margin: 0.75rem 0;
 }
 
+/* ── Pricing section ── */
+.pricing-section {
+  background: #0f0f1a;
+  padding: 5rem 2rem;
+  text-align: center;
+}
+.pricing-section h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.5rem;
+}
+.pricing-section .pricing-sub {
+  color: rgba(255,255,255,0.5);
+  font-size: 1rem;
+  margin-bottom: 3rem;
+}
+.pricing-cards {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.pricing-card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 2rem;
+  width: 300px;
+  text-align: left;
+  position: relative;
+  transition: border-color 0.2s;
+}
+.pricing-card:hover { border-color: rgba(255,255,255,0.25); }
+.pricing-card.popular {
+  border-color: #DC0032;
+  background: rgba(220,0,50,0.08);
+}
+.popular-badge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #DC0032;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.pricing-card .plan-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 1rem;
+}
+.pricing-card .price {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin-bottom: 0.3rem;
+}
+.pricing-card .price span {
+  font-size: 1rem;
+  font-weight: 400;
+  color: rgba(255,255,255,0.4);
+}
+.pricing-card .plan-desc {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 1.5rem;
+}
+.pricing-card ul {
+  list-style: none;
+  margin-bottom: 2rem;
+}
+.pricing-card ul li {
+  font-size: 0.88rem;
+  color: rgba(255,255,255,0.7);
+  padding: 0.4rem 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.pricing-card ul li::before {
+  content: '✓';
+  color: #22c55e;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.btn-checkout {
+  display: block;
+  width: 100%;
+  padding: 0.85rem;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s, transform 0.1s;
+  text-align: center;
+  text-decoration: none;
+}
+.btn-checkout:active { transform: scale(0.99); }
+.btn-checkout.outline {
+  background: transparent;
+  border: 1.5px solid rgba(255,255,255,0.2);
+  color: white;
+}
+.btn-checkout.outline:hover { border-color: rgba(255,255,255,0.5); }
+.btn-checkout.primary {
+  background: #DC0032;
+  color: white;
+}
+.btn-checkout.primary:hover { opacity: 0.9; }
+
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .page { flex-direction: column; }
@@ -358,6 +485,7 @@ body {
     padding: 2rem 1.5rem;
   }
   .features-row { gap: 1rem; }
+  .pricing-cards { flex-direction: column; align-items: center; }
 }
 </style>
 </head>
@@ -483,6 +611,49 @@ body {
   </div>
 </div>
 
+<!-- Pricing section -->
+<section class="pricing-section" id="pricing">
+  <h2>Planes simples y transparentes</h2>
+  <p class="pricing-sub">Sin permanencia. Cancela cuando quieras.</p>
+
+  <div class="pricing-cards">
+    <!-- Básico -->
+    <div class="pricing-card">
+      <div class="plan-name">Basico</div>
+      <div class="price">29€ <span>/mes</span></div>
+      <div class="plan-desc">Para empezar a captar</div>
+      <ul>
+        <li>Hasta 15 contactos por dia</li>
+        <li>Dashboard en tiempo real</li>
+        <li>Mensajes WhatsApp personalizados</li>
+        <li>Idealista, Fotocasa, Pisos.com</li>
+        <li>Soporte por email</li>
+      </ul>
+      <button class="btn-checkout outline" onclick="startCheckout('basico')">
+        Empezar con Basico
+      </button>
+    </div>
+
+    <!-- Pro -->
+    <div class="pricing-card popular">
+      <div class="popular-badge">Mas popular</div>
+      <div class="plan-name">Pro</div>
+      <div class="price">49€ <span>/mes</span></div>
+      <div class="plan-desc">Para maxima captacion</div>
+      <ul>
+        <li>Contactos ilimitados por dia</li>
+        <li>Todo lo del plan Basico</li>
+        <li>IA generativa en cada mensaje</li>
+        <li>Prioridad en soporte</li>
+        <li>Acceso a nuevas funciones</li>
+      </ul>
+      <button class="btn-checkout primary" onclick="startCheckout('pro')">
+        Empezar con Pro
+      </button>
+    </div>
+  </div>
+</section>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = 'https://uolymolzgesvxucmbcgw.supabase.co';
@@ -593,6 +764,31 @@ function copyInstallCmd() {
   const { data: { session } } = await sb.auth.getSession();
   if (session) window.location.href = 'dashboard.html';
 })();
+
+async function startCheckout(plan) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    showError('Debes iniciar sesion para suscribirte');
+    document.querySelector('.panel').scrollIntoView({ behavior: 'smooth' });
+    showTab('login');
+    return;
+  }
+  try {
+    const res = await fetch('/api/create-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ plan }),
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      showError(data.error || 'Error al crear sesion de pago');
+    }
+  } catch {
+    showError('Error de conexion. Intentalo de nuevo.');
+  }
+}
 </script>
 </body>
 </html>

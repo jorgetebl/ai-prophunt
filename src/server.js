@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, appendFileSync, writeFileSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { execSync, spawn } from 'node:child_process';
 import { log } from './logger.js';
@@ -9,6 +9,7 @@ import { normalizePhone, isValidMobile } from './phone.js';
 import { loadContacted, getTodayContactCount } from './filter.js';
 import { createQueue } from './queue.js';
 import { isConfigured, getUserId, getContacts, getLogs as sbGetLogs, getConfig as sbGetConfig, init as initSupabase } from './supabase.js';
+import { parseEmail, extractPhone, buildMessage as claudeBuildMessage, setAccessToken } from './claude.js';
 
 const CONFIG_PATH = join(import.meta.dirname, '..', 'config.json');
 const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
@@ -71,6 +72,351 @@ function isDuplicateInContacted(phone, url) {
   if (phones.has(`34${phone}`) || phones.has(phone)) return true;
   if (url && urls.has(url)) return true;
   return false;
+}
+
+// --- BetterPlace Pipeline State Machine ---
+
+/**
+ * States:
+ * IDLE → GMAIL_NAVIGATE → GMAIL_DOM_PENDING → EMAIL_PARSED
+ * → [for each property]:
+ *     PROPERTY_NAVIGATE → DOM_PENDING → DOM_RECEIVED
+ *     → (if click needed) CLICKING → DOM_PENDING_2
+ *     → PHONE_FOUND | PHONE_FAILED
+ * → DONE
+ */
+
+let pipeline = {
+  state: 'IDLE',
+  taskId: null,
+  properties: [],      // parsed from email
+  currentIdx: 0,
+  currentProperty: null,
+  clickAttempts: 0,
+  results: [],
+};
+
+function pipelineLog(msg) {
+  const ts = new Date().toLocaleTimeString('es-ES', { timeZone: 'Europe/Madrid' });
+  log(`Pipeline [${pipeline.state}]: ${msg}`);
+  const dateStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+  const logPath = join(PROJECT_ROOT, 'data', 'logs', `${dateStr}.log`);
+  try {
+    appendFileSync(logPath, `${ts} - ${msg}\n`);
+  } catch { /* ignore */ }
+}
+
+function nextTaskId() {
+  return `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function nextProperty() {
+  while (pipeline.currentIdx < pipeline.properties.length) {
+    const prop = pipeline.properties[pipeline.currentIdx];
+    pipeline.currentIdx++;
+    // Skip duplicates
+    const contacted = loadContacted();
+    const urls = new Set(contacted.contacts.map(c => c.url));
+    if (urls.has(prop.url)) {
+      pipelineLog(`SKIP duplicate URL: ${prop.url}`);
+      pipeline.results.push({ ...prop, status: 'skipped_duplicate' });
+      continue;
+    }
+    return prop;
+  }
+  return null;
+}
+
+function startNextProperty() {
+  const prop = nextProperty();
+  if (!prop) {
+    pipeline.state = 'DONE';
+    pipelineLog(`Done. ${pipeline.results.length} properties processed.`);
+    return;
+  }
+  pipeline.currentProperty = prop;
+  pipeline.clickAttempts = 0;
+  pipeline.taskId = nextTaskId();
+  pipeline.state = 'PROPERTY_NAVIGATE';
+  pipelineLog(`Navigating to: ${prop.url}`);
+}
+
+async function processPhoneResult(domText) {
+  const prop = pipeline.currentProperty;
+  const result = await extractPhone(domText, prop.portal);
+
+  if (result.found && result.phone) {
+    const phone = normalizePhone(result.phone);
+    if (!phone || !isValidMobile(phone, prefixes)) {
+      pipelineLog(`Phone invalid or landline: ${result.phone} — skip`);
+      pipeline.results.push({ ...prop, status: 'skipped_landline' });
+      startNextProperty();
+      return;
+    }
+    if (isDuplicateInContacted(phone, prop.url)) {
+      pipelineLog(`Phone duplicate: ${phone} — skip`);
+      pipeline.results.push({ ...prop, status: 'skipped_duplicate' });
+      startNextProperty();
+      return;
+    }
+    pipelineLog(`Phone found: ${phone} — queuing WhatsApp`);
+    const contact = {
+      phone,
+      url: prop.url,
+      portal: prop.portal,
+      zone: prop.zone,
+      price: prop.price,
+      name: prop.name || '',
+    };
+    // Build message via Claude
+    let message;
+    try {
+      message = await claudeBuildMessage(contact);
+    } catch (err) {
+      log(`Claude buildMessage error: ${err.message}`);
+      const { buildMessage: staticBuildMessage } = await import('./message.js');
+      message = staticBuildMessage(contact);
+    }
+    contact.message = message;
+    queue.enqueue(contact);
+    pipeline.results.push({ ...prop, phone, status: 'queued' });
+    startNextProperty();
+  } else if (result.action === 'click' && pipeline.clickAttempts < 3) {
+    pipeline.clickAttempts++;
+    pipeline.taskId = nextTaskId();
+    pipeline.state = 'CLICKING';
+    pipeline._pendingClickHint = result.hint || 'ver teléfono';
+    pipelineLog(`Click needed: "${pipeline._pendingClickHint}" (attempt ${pipeline.clickAttempts})`);
+  } else {
+    pipelineLog(`No phone found for ${prop.url}`);
+    pipeline.results.push({ ...prop, status: 'failed_no_phone' });
+    startNextProperty();
+  }
+}
+
+// --- Browser task handlers ---
+
+function handleBrowserNextTask(_req, res) {
+  const { state, taskId } = pipeline;
+
+  if (state === 'IDLE' || state === 'DONE') {
+    return json(res, 200, { type: 'idle' });
+  }
+
+  if (state === 'GMAIL_NAVIGATE') {
+    pipeline.state = 'GMAIL_NAVIGATE_WAITING';
+    return json(res, 200, { type: 'navigate', url: 'https://mail.google.com/', taskId });
+  }
+
+  if (state === 'GMAIL_NAVIGATE_WAITING') {
+    return json(res, 200, { type: 'idle' });
+  }
+
+  if (state === 'GMAIL_DOM_PENDING') {
+    return json(res, 200, { type: 'extract_dom', taskId });
+  }
+
+  if (state === 'PROPERTY_NAVIGATE') {
+    // Task dispatched — extension picks it up
+    pipeline.state = 'PROPERTY_NAVIGATE_WAITING';
+    return json(res, 200, { type: 'navigate', url: pipeline.currentProperty.url, taskId });
+  }
+
+  if (state === 'DOM_PENDING' || state === 'DOM_PENDING_2') {
+    return json(res, 200, { type: 'extract_dom', taskId });
+  }
+
+  if (state === 'CLICKING') {
+    const hint = pipeline._pendingClickHint || 'ver teléfono';
+    pipeline.state = 'CLICKING_WAITING';
+    return json(res, 200, { type: 'click', hint, taskId });
+  }
+
+  return json(res, 200, { type: 'idle' });
+}
+
+async function handleBrowserDom(req, res) {
+  let body;
+  try { body = await readBody(req); } catch { return json(res, 400, { error: 'Invalid JSON' }); }
+
+  const { state } = pipeline;
+
+  if (state === 'GMAIL_DOM_PENDING') {
+    pipeline.state = 'EMAIL_PARSING';
+    json(res, 200, { ok: true });
+    try {
+      const properties = await parseEmail(body.dom || '');
+      pipelineLog(`Email parsed: ${properties.length} particulares found`);
+      pipeline.properties = properties;
+      pipeline.currentIdx = 0;
+      pipeline.results = [];
+      startNextProperty();
+    } catch (err) {
+      pipelineLog(`parseEmail error: ${err.message}`);
+      pipeline.state = 'DONE';
+    }
+    return;
+  }
+
+  if (state === 'DOM_PENDING' || state === 'DOM_PENDING_2') {
+    pipeline.state = 'PROCESSING';
+    json(res, 200, { ok: true });
+    try {
+      await processPhoneResult(body.dom || '');
+    } catch (err) {
+      pipelineLog(`processPhoneResult error: ${err.message}`);
+      pipeline.results.push({ ...pipeline.currentProperty, status: 'failed_error' });
+      startNextProperty();
+    }
+    return;
+  }
+
+  json(res, 200, { ok: true });
+}
+
+async function handleBrowserActionDone(req, res) {
+  let body;
+  try { body = await readBody(req); } catch { return json(res, 400, { error: 'Invalid JSON' }); }
+
+  const { state } = pipeline;
+  json(res, 200, { ok: true });
+
+  if (state === 'GMAIL_NAVIGATE_WAITING' && body.action === 'navigate') {
+    if (body.ok) {
+      pipeline.state = 'GMAIL_DOM_PENDING';
+      pipelineLog('Gmail loaded — requesting DOM');
+    } else {
+      pipelineLog(`Gmail navigation failed: ${body.error}`);
+      pipeline.state = 'DONE';
+    }
+    return;
+  }
+
+  if (state === 'PROPERTY_NAVIGATE_WAITING' && body.action === 'navigate') {
+    if (body.ok) {
+      pipeline.state = 'DOM_PENDING';
+    } else {
+      pipelineLog(`Property navigation failed: ${body.error}`);
+      pipeline.results.push({ ...pipeline.currentProperty, status: 'failed_navigate' });
+      startNextProperty();
+    }
+    return;
+  }
+
+  if (state === 'CLICKING_WAITING' && body.action === 'click') {
+    if (body.ok) {
+      pipeline.state = 'DOM_PENDING_2';
+    } else {
+      pipelineLog('Click failed — no phone');
+      pipeline.results.push({ ...pipeline.currentProperty, status: 'failed_no_phone' });
+      startNextProperty();
+    }
+    return;
+  }
+}
+
+async function handleRunBetterplace(_req, res) {
+  if (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') {
+    return json(res, 409, { error: 'Pipeline already running', state: pipeline.state });
+  }
+
+  // Reset pipeline and navigate to Gmail
+  pipeline = {
+    state: 'GMAIL_NAVIGATE',
+    taskId: nextTaskId(),
+    properties: [],
+    currentIdx: 0,
+    currentProperty: null,
+    clickAttempts: 0,
+    results: [],
+    _pendingClickHint: null,
+  };
+
+  pipelineLog('Pipeline started — navigating to Gmail');
+  json(res, 200, { ok: true, message: 'Pipeline started' });
+}
+
+// --- Stripe webhook handler ---
+
+async function handleStripeWebhook(req, res) {
+  let rawBody;
+  try {
+    rawBody = await new Promise((resolve, reject) => {
+      const chunks = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', () => resolve(Buffer.concat(chunks)));
+      req.on('error', reject);
+    });
+  } catch {
+    return json(res, 400, { error: 'Could not read body' });
+  }
+
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    return json(res, 500, { error: 'Stripe webhook secret not configured' });
+  }
+
+  let event;
+  try {
+    const stripe = (await import('stripe')).default;
+    const stripeClient = stripe(process.env.STRIPE_SECRET_KEY);
+    event = stripeClient.webhooks.constructEvent(rawBody, sig, webhookSecret);
+  } catch (err) {
+    log(`Stripe webhook signature error: ${err.message}`);
+    return json(res, 400, { error: `Webhook Error: ${err.message}` });
+  }
+
+  const { isConfigured: sbConfigured } = await import('./supabase.js');
+
+  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
+    const sub = event.data.object;
+    const customerId = sub.customer;
+    const plan = sub.items?.data?.[0]?.price?.id === process.env.STRIPE_PRICE_PRO ? 'pro' : 'basico';
+
+    if (sbConfigured()) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const adminClient = createClient(
+          process.env.SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
+        );
+        await adminClient.from('subscriptions').upsert({
+          stripe_customer_id: customerId,
+          stripe_subscription_id: sub.id,
+          plan,
+          status: sub.status === 'active' ? 'active' : 'inactive',
+          current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'stripe_subscription_id' });
+        log(`Stripe: subscription upserted (${customerId}, ${plan})`);
+      } catch (err) {
+        log(`Stripe: Supabase upsert error — ${err.message}`);
+      }
+    }
+  }
+
+  if (event.type === 'customer.subscription.deleted') {
+    const sub = event.data.object;
+    if (sbConfigured()) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const adminClient = createClient(
+          process.env.SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
+        );
+        await adminClient.from('subscriptions')
+          .update({ status: 'canceled', updated_at: new Date().toISOString() })
+          .eq('stripe_subscription_id', sub.id);
+        log(`Stripe: subscription canceled (${sub.id})`);
+      } catch (err) {
+        log(`Stripe: Supabase cancel error — ${err.message}`);
+      }
+    }
+  }
+
+  json(res, 200, { received: true });
 }
 
 // --- Route handlers ---
@@ -352,6 +698,11 @@ const routes = {
   'GET /api/config': handleApiConfig,
   'POST /api/run': handleApiRun,
   'GET /api/healthcheck': handleApiHealthcheck,
+  // BetterPlace pipeline (Chrome extension)
+  'GET /browser/next-task': handleBrowserNextTask,
+  'POST /browser/dom': handleBrowserDom,
+  'POST /browser/action-done': handleBrowserActionDone,
+  'POST /api/run-betterplace': handleRunBetterplace,
 };
 
 const server = createServer((req, res) => {
@@ -421,6 +772,27 @@ async function start() {
     if (ready) {
       const uid = await getUserId();
       log(`Server: Supabase connected (user: ${uid})`);
+
+      // Login to get JWT for Claude proxy
+      const email = process.env.PROPHUNT_EMAIL;
+      const password = process.env.PROPHUNT_PASSWORD;
+      if (email && password) {
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+          const { data, error } = await sb.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          setAccessToken(data.session.access_token);
+          log('Server: Claude proxy authenticated via Supabase JWT');
+          // Refresh token before expiry (every 50 min)
+          setInterval(async () => {
+            const { data: refreshed } = await sb.auth.refreshSession();
+            if (refreshed?.session) setAccessToken(refreshed.session.access_token);
+          }, 50 * 60 * 1000);
+        } catch (err) {
+          log(`Server: WARNING — could not get JWT for Claude proxy: ${err.message}`);
+        }
+      }
     } else {
       log('Server: Supabase configured but could not resolve user — using local JSON files');
     }

@@ -1,0 +1,63 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build binaries
+    runs-on: macos-latest   # macOS runner for native arm64/x64 binaries
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build binaries
+        run: npm run build
+
+      - name: Get version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Delete existing latest release
+        run: |
+          gh release delete latest --yes 2>/dev/null || true
+          git tag -d latest 2>/dev/null || true
+          git push origin :refs/tags/latest 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "PropHunt ${{ steps.version.outputs.version }}"
+          body: |
+            Ultima version de AI PropHunt.
+
+            **Instalacion automatica:**
+            ```bash
+            curl -sL https://raw.githubusercontent.com/jorgetebl/ai-prophunt/main/install.sh | bash -s -- --setup-token TU_TOKEN
+            ```
+          draft: false
+          prerelease: false
+          files: |
+            dist/prophunt-macos-arm64
+            dist/prophunt-macos-x64
+            dist/chrome-extension.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

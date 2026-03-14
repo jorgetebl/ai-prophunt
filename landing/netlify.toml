@@ -1,6 +1,10 @@
 [build]
   publish = "."
-  command = ""
+  command = "npm install"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
 
 [[headers]]
   for = "/install-prophunt.command"

@@ -10,3 +10,9 @@ data/logs/
 
 # Config local (cada equipo tiene su propia config)
 config.json
+
+# Local Netlify folder
+.netlify
+
+# Build output (distributed via GitHub Releases, not in repo)
+dist/

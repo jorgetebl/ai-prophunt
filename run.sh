@@ -92,23 +92,24 @@ if [[ "$MODE" == "test" ]]; then
   echo "Verificando requisitos..." | tee -a "$LOG"
   PREFLIGHT_OK=true
 
-  # 1. Claude Code CLI
-  if ! command -v claude &>/dev/null; then
-    echo "  FAIL  Claude Code CLI no instalado" | tee -a "$LOG"
-    echo "         Instalar: npm install -g @anthropic-ai/claude-code" | tee -a "$LOG"
-    PREFLIGHT_OK=false
+  # 1. ANTHROPIC_API_KEY configurada
+  if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+    # Try to load from .env
+    ANTHROPIC_API_KEY=$(grep '^ANTHROPIC_API_KEY=' "$DIR/.env" 2>/dev/null | cut -d= -f2-)
+  fi
+  if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+    echo "  OK    ANTHROPIC_API_KEY configurada" | tee -a "$LOG"
   else
-    echo "  OK    Claude Code CLI" | tee -a "$LOG"
+    echo "  FAIL  ANTHROPIC_API_KEY no configurada" | tee -a "$LOG"
+    echo "         Añadir en .env: ANTHROPIC_API_KEY=sk-ant-..." | tee -a "$LOG"
+    PREFLIGHT_OK=false
   fi
 
-  # 2. Claude Code autenticado
-  CLAUDE_AUTH=$(claude auth status 2>&1)
-  if echo "$CLAUDE_AUTH" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('loggedIn') else 1)" 2>/dev/null; then
-    CLAUDE_EMAIL=$(echo "$CLAUDE_AUTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('email','?'))" 2>/dev/null)
-    echo "  OK    Claude autenticado ($CLAUDE_EMAIL)" | tee -a "$LOG"
+  # 2. Node.js y servidor
+  if command -v node &>/dev/null; then
+    echo "  OK    Node.js $(node --version)" | tee -a "$LOG"
   else
-    echo "  FAIL  Claude Code no autenticado" | tee -a "$LOG"
-    echo "         Ejecutar: claude auth login" | tee -a "$LOG"
+    echo "  FAIL  Node.js no instalado" | tee -a "$LOG"
     PREFLIGHT_OK=false
   fi
 
@@ -121,13 +122,13 @@ if [[ "$MODE" == "test" ]]; then
     PREFLIGHT_OK=false
   fi
 
-  # 4. Extension Claude en Chrome
-  CLAUDE_EXT_DIR="$HOME/Library/Application Support/Google/Chrome/Default/Extensions/fcoeoabgfenejglbffodgkkbkcdhcgfn"
-  if [[ -d "$CLAUDE_EXT_DIR" ]]; then
-    echo "  OK    Extension Claude en Chrome" | tee -a "$LOG"
+  # 4. Extension AI PropHunt en Chrome (directorio del proyecto)
+  PROPHUNT_EXT_DIR="$DIR/chrome-extension"
+  if [[ -d "$PROPHUNT_EXT_DIR" && -f "$PROPHUNT_EXT_DIR/manifest.json" ]]; then
+    echo "  OK    Extension AI PropHunt disponible en $PROPHUNT_EXT_DIR" | tee -a "$LOG"
+    echo "         (Asegurate de haberla cargado en Chrome Developer Mode)" | tee -a "$LOG"
   else
-    echo "  FAIL  Extension Claude no instalada en Chrome" | tee -a "$LOG"
-    echo "         Instalar desde Chrome Web Store: buscar 'Claude'" | tee -a "$LOG"
+    echo "  FAIL  Extension AI PropHunt no encontrada en $PROPHUNT_EXT_DIR" | tee -a "$LOG"
     PREFLIGHT_OK=false
   fi
 
@@ -239,10 +240,28 @@ NO envies ningun WhatsApp. Solo guarda los archivos.
 Directorio de trabajo: $DIR
 PROMPT_EOF
 
-  echo "Lanzando Claude Code para analizar inmueble..." | tee -a "$LOG"
-  claude --print --chrome --dangerously-skip-permissions \
-    --allowedTools "Bash(read:*) Bash(write:*) Bash(cat:*) Bash(echo:*) Bash(jq:*) Bash(date:*) Bash(mkdir:*) mcp__claude-in-chrome__*" \
-    < "$PROMPT_FILE" 2>&1 | tee -a "$LOG"
+  echo "Lanzando servidor y pipeline de test..." | tee -a "$LOG"
+
+  SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
+
+  # Launch server in background for test
+  node src/server.js &
+  TEST_SERVER_PID=$!
+  sleep 3
+
+  # Trigger pipeline
+  curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-betterplace" >/dev/null 2>&1
+
+  # Wait up to 5 min for pipeline to produce a result
+  for i in $(seq 1 60); do
+    sleep 5
+    TASK_TYPE=$(curl -s "http://127.0.0.1:$SERVER_PORT/browser/next-task" | jq -r '.type // "unknown"' 2>/dev/null)
+    if [[ "$TASK_TYPE" == "idle" ]]; then break; fi
+  done
+
+  # Shutdown test server
+  curl -s -X POST "http://127.0.0.1:$SERVER_PORT/shutdown" >/dev/null 2>&1 || true
+  wait $TEST_SERVER_PID 2>/dev/null || true
 
   rm -f "$PROMPT_FILE"
 
@@ -526,94 +545,75 @@ elif [[ "$MODE" == "server" ]]; then
   node src/server.js $DRY_RUN_FLAG 2>&1 | tee -a "$LOG"
 
 # ═══════════════════════════════════════════
-#  MODO BETTERPLACE — Desatendido (Gmail → Chrome → WhatsApp)
+#  MODO BETTERPLACE — Desatendido (Gmail → Chrome Extension → WhatsApp)
 # ═══════════════════════════════════════════
 elif [[ "$MODE" == "betterplace" ]]; then
-  echo "Modo: BetterPlace desatendido (Gmail → Chrome → WhatsApp)" | tee -a "$LOG"
+  echo "Modo: BetterPlace desatendido (Gmail → Chrome Extension → WhatsApp)" | tee -a "$LOG"
 
-  # Leer plantilla de WhatsApp
-  WHATSAPP_TEMPLATE=""
-  if [[ -f "$DIR/templates/whatsapp.txt" ]]; then
-    WHATSAPP_TEMPLATE=$(cat "$DIR/templates/whatsapp.txt")
+  SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
+
+  # Comprobar si el servidor ya está corriendo
+  if curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
+    echo "Servidor ya en ejecución en puerto $SERVER_PORT" | tee -a "$LOG"
+    SERVER_ALREADY_RUNNING=true
+  else
+    echo "Lanzando servidor Node en puerto $SERVER_PORT..." | tee -a "$LOG"
+    node src/server.js &
+    SERVER_PID=$!
+    SERVER_ALREADY_RUNNING=false
+
+    # Esperar a que el servidor esté listo (máx 15s)
+    for i in $(seq 1 15); do
+      if curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
+        echo "Servidor listo (PID $SERVER_PID)" | tee -a "$LOG"
+        break
+      fi
+      sleep 1
+    done
+
+    if ! curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
+      echo "ERROR: El servidor no arrancó en 15 segundos. Abortando." | tee -a "$LOG"
+      exit 1
+    fi
   fi
 
-  claude --print --chrome --dangerously-skip-permissions \
-    --allowedTools "Bash(read:*) Bash(wacli:*) Bash(jq:*) Bash(date:*) Bash(mkdir:*) mcp__claude-in-chrome__*" \
-    "Eres un agente de captación inmobiliaria automatizado para Juanan Gomis (REMAX Experience, Palma de Mallorca).
-Ejecuta el flujo completo SIN intervención humana.
+  # Verificar que la extensión de Chrome está conectada
+  echo "Verificando extensión Chrome..." | tee -a "$LOG"
+  # La extensión ya hace polling al servidor. Esperamos 5s para asegurar la primera conexión.
+  sleep 5
 
-PASO 1: BUSCAR EMAIL EN GMAIL
-- Usa tabs_context_mcp para obtener las pestañas abiertas en Chrome
-- Gmail ya está abierto en una pestaña. Encuéntrala
-- Navega a Gmail y busca: from:betterplace OR from:noreply@betterplace
-- Si no hay email de hoy ($DATE), registra en el log y termina
-- Si hay email, ábrelo y lee su contenido
+  # Disparar el pipeline BetterPlace
+  echo "Iniciando pipeline BetterPlace..." | tee -a "$LOG"
+  PIPELINE_RESPONSE=$(curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-betterplace" \
+    -H "Content-Type: application/json")
+  echo "Pipeline: $PIPELINE_RESPONSE" | tee -a "$LOG"
 
-PASO 2: PARSEAR EL EMAIL
-- Extrae bloques de inmuebles del email de BetterPlace
-- Cada bloque tiene: título, precio, m², habs, portal, links
-- SOLO procesar los que digan 'Particular' (ignorar agencias)
-- De cada bloque extraer:
-  - URL del inmueble (link 'Ficha del inmueble' o link del portal)
-  - Zona/dirección (del título)
-  - Portal (idealista, fotocasa, pisos.com, etc.)
-  - Precio
-
-PASO 3: PARA CADA INMUEBLE DE PARTICULAR
-a) Abrir la URL del inmueble en Chrome (crear nueva pestaña)
-b) Esperar 5-10 segundos para que cargue
-c) Buscar botón 'Ver teléfono' o 'Contactar' y hacer click
-d) Extraer el número de teléfono que aparece
-e) Validar que empieza por 6 o 7 (móviles españoles)
-   - Si es fijo (empieza por 9, 8, etc.) → SKIP, registrar como 'skipped_landline'
-   - Si es profesional/agencia → SKIP, registrar como 'skipped_agency'
-   - Si hay captcha o error → SKIP, registrar como 'skipped_captcha'
-   - No reintentar más de 3 veces por inmueble
-
-PASO 4: VERIFICAR DUPLICADOS
-- Leer $DIR/data/contacted.json
-- Si el teléfono ya fue contactado → SKIP
-- Si la URL ya fue procesada → SKIP
-
-PASO 5: ENVIAR WHATSAPP
-- Comando: wacli send text --to '34XXXXXXXXX' --message '<mensaje>'
-- Plantilla del mensaje:
-$WHATSAPP_TEMPLATE
-- Reemplazar {{nombre}} con nombre del vendedor si está disponible, si no quitar esa parte
-  (cambiar 'Hola {{nombre}}, soy' por 'Hola, soy')
-- Reemplazar {{zona}} con la dirección/zona del inmueble
-- Reemplazar {{portal}} con el nombre del portal
-- ESPERAR MÍNIMO 2 MINUTOS entre cada envío de WhatsApp
-
-PASO 6: REGISTRAR
-- Actualizar $DIR/data/contacted.json añadiendo el contacto:
-  {
-    \"phone\": \"34XXXXXXXXX\",
-    \"name\": \"<nombre o null>\",
-    \"url\": \"<url del inmueble>\",
-    \"portal\": \"<portal>\",
-    \"zone\": \"<zona/dirección>\",
-    \"price\": <precio>,
-    \"date_contacted\": \"<ISO timestamp>\",
-    \"status\": \"sent\" o \"skipped_<razón>\" o \"failed\",
-    \"message_preview\": \"<primeros 100 chars del mensaje>\"
-  }
-- Escribir log en $DIR/data/logs/$DATE.log con timestamp para cada acción
-- Al terminar, escribir resumen: X procesados, Y enviados, Z duplicados, W fallidos
-
-REGLAS ESTRICTAS:
-- Máximo $SLOTS_LEFT contactos más hoy (ya van $TODAY_COUNT de $MAX_PER_DAY)
-- SOLO móviles: números que empiezan por 6 o 7
-- SOLO particulares, NUNCA agencias
-- Horario válido de envío: 9:00-14:00 y 16:00-20:00 (hora España/Madrid)
-- Si estamos fuera de horario, registrar todo pero NO enviar WhatsApp (marcar 'pending_schedule')
-- Si detectas captcha o bloqueo en un portal, registra como failed y pasa al siguiente
-- Esperar 5-10 segundos entre navegaciones a inmuebles
-
-Directorio de trabajo: $DIR" 2>&1 | tee -a "$LOG"
+  # Esperar a que el pipeline termine (máx 30 min)
+  echo "Esperando a que el pipeline termine..." | tee -a "$LOG"
+  for i in $(seq 1 360); do
+    STATE=$(curl -s "http://127.0.0.1:$SERVER_PORT/health" | jq -r '.ok // "false"' 2>/dev/null)
+    PIPELINE_STATE=$(curl -s "http://127.0.0.1:$SERVER_PORT/browser/next-task" 2>/dev/null)
+    TASK_TYPE=$(echo "$PIPELINE_STATE" | jq -r '.type // "unknown"' 2>/dev/null)
+    if [[ "$TASK_TYPE" == "idle" ]]; then
+      sleep 5
+      # Check again — could be transitioning
+      TASK_TYPE2=$(curl -s "http://127.0.0.1:$SERVER_PORT/browser/next-task" | jq -r '.type // "unknown"' 2>/dev/null)
+      if [[ "$TASK_TYPE2" == "idle" ]]; then
+        break
+      fi
+    fi
+    sleep 5
+  done
 
   echo "" | tee -a "$LOG"
   echo "Run BetterPlace completado — $DATE $(date +%H:%M)" | tee -a "$LOG"
+
+  # Apagar servidor si lo lanzamos nosotros
+  if [[ "$SERVER_ALREADY_RUNNING" == "false" && -n "${SERVER_PID:-}" ]]; then
+    echo "Apagando servidor..." | tee -a "$LOG"
+    curl -s -X POST "http://127.0.0.1:$SERVER_PORT/shutdown" >/dev/null 2>&1 || true
+    wait $SERVER_PID 2>/dev/null || true
+  fi
 
 else
   echo "Modo desconocido: $MODE" | tee -a "$LOG"

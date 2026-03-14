@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "AI PropHunt",
+  "version": "1.0.0",
+  "description": "Extensión de captación inmobiliaria automatizada para AI PropHunt",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.idealista.com/*",
+    "https://www.fotocasa.es/*",
+    "https://www.pisos.com/*",
+    "https://mail.google.com/*",
+    "http://localhost:3456/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.idealista.com/*",
+        "https://www.fotocasa.es/*",
+        "https://www.pisos.com/*",
+        "https://mail.google.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AI PropHunt"
+  }
+}
