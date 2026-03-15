@@ -83,7 +83,7 @@ body {
   margin-bottom: 2rem;
 }
 .login-card .brand-name { font-size: 1.3rem; font-weight: 700; color: var(--dark); }
-.remax-badge {
+.remax-badge-unused {
   background: var(--accent);
   color: white;
   font-size: 0.55rem;
@@ -381,7 +381,6 @@ tr:hover td { background: #f9fafb; }
     <div class="login-card">
       <div class="brand">
         <span class="brand-name">AI PropHunt</span>
-        <span class="remax-badge">REMAX</span>
       </div>
       <h1>Bienvenido</h1>
       <p class="sub">Inicia sesion para continuar</p>
@@ -410,12 +409,12 @@ tr:hover td { background: #f9fafb; }
   <aside class="sidebar">
     <div class="brand">
       <span class="brand-name">AI PropHunt</span>
-      <span class="remax-badge">RE</span>
     </div>
     <nav>
       <a href="#" class="active"><span class="icon">&#x1F4CA;</span> Dashboard</a>
       <a href="#contacts-section" onclick="setFilter('all')"><span class="icon">&#x1F4CB;</span> Contactos</a>
       <a href="#logs-section"><span class="icon">&#x1F4DD;</span> Logs</a>
+      <a href="#message-section"><span class="icon">&#x1F4AC;</span> Mensaje</a>
       <a href="#setup-section"><span class="icon">&#x2699;&#xFE0F;</span> Configuracion</a>
     </nav>
     <div class="sidebar-footer">
@@ -491,6 +490,36 @@ tr:hover td { background: #f9fafb; }
       <div class="log-viewer" id="logViewer"></div>
     </div>
 
+    <!-- Message template -->
+    <div class="section" id="message-section">
+      <div class="section-header">
+        <h2>Plantilla de mensaje</h2>
+        <button class="btn-refresh" onclick="saveMessageConfig()" id="btnSaveMsg" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.4rem 1rem;">Guardar</button>
+      </div>
+      <div style="padding: 1.5rem;">
+        <p style="font-size: 0.85rem; color: var(--gray); margin-bottom: 1rem;">
+          La IA usara esta plantilla como base y la personalizara para cada inmueble usando los datos activados.
+        </p>
+        <textarea id="messageTemplate" style="width: 100%; min-height: 200px; padding: 0.85rem; border: 1.5px solid #e0e0e0; border-radius: 10px; font-family: inherit; font-size: 0.88rem; line-height: 1.55; resize: vertical; background: #fafafa;" placeholder="Escribe tu plantilla de mensaje..."></textarea>
+        <div style="margin-top: 1.25rem;">
+          <p style="font-size: 0.8rem; font-weight: 600; color: var(--dark); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">Datos que la IA incluira en el mensaje</p>
+          <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
+            <input type="checkbox" id="varPrice" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
+            <span><strong>Precio</strong> — menciona el precio del inmueble</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
+            <input type="checkbox" id="varZone" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
+            <span><strong>Direccion/zona</strong> — menciona la ubicacion del inmueble</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
+            <input type="checkbox" id="varDetail" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
+            <span><strong>Detalle de la descripcion</strong> — la IA lee la ficha del inmueble y anade un comentario personalizado</span>
+          </label>
+        </div>
+        <div id="msgSaveStatus" style="display: none; margin-top: 1rem; padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.85rem;"></div>
+      </div>
+    </div>
+
     <!-- Setup / Config -->
     <div class="section" id="setup-section">
       <div class="section-header">
@@ -536,7 +565,18 @@ function weekAgoStr() { const d = new Date(); d.setDate(d.getDate() - 7); return
 // Auth
 async function checkAuth() {
   const { data: { session } } = await sb.auth.getSession();
-  if (session) { currentUser = session.user; showDashboard(); }
+  if (!session) return;
+  // Allow access if coming from checkout success (webhook may not have fired yet)
+  const fromCheckout = new URLSearchParams(window.location.search).get('checkout') === 'success';
+  if (!fromCheckout) {
+    const { data: sub } = await sb.from('subscriptions')
+      .select('status')
+      .eq('user_id', session.user.id)
+      .eq('status', 'active')
+      .single();
+    if (!sub) { window.location.href = '/'; return; }
+  }
+  currentUser = session.user; showDashboard();
 }
 
 function showDashboard() {
@@ -619,8 +659,60 @@ function setFilter(f) {
   document.querySelectorAll('.filter-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === f));
   loadContacts();
 }
-function refreshAll() { loadContacts(); loadLogs(); }
+function refreshAll() { loadContacts(); loadLogs(); loadMessageConfig(); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// Message template
+const DEFAULT_TEMPLATE = `Hola{{nombre}}, soy Juanan Gomis agente inmobiliario profesional
+
+He visto tu {{tipo}} en {{zona}} que tienes en {{portal}}{{precio}}. {{detalle}}
+
+No te escribo para convencerte de trabajar con una agencia 🙂
+
+Solo comentarte algo: vender por tu cuenta es totalmente posible, pero vender bien, en menos tiempo y sin tener que bajar el precio es lo complicado.
+
+Si algun dia te apetece ver como lo trabajariamos y luego decides si te aporta valor o no, llamame y lo vemos sin ningun compromiso.`;
+
+let msgConfigLoaded = false;
+async function loadMessageConfig() {
+  if (!currentUser || msgConfigLoaded) return;
+  const { data } = await sb.from('configs')
+    .select('message_template, message_vars')
+    .eq('user_id', currentUser.id)
+    .single();
+  document.getElementById('messageTemplate').value = data?.message_template || DEFAULT_TEMPLATE;
+  const vars = data?.message_vars || { price: true, zone: true, detail: true };
+  document.getElementById('varPrice').checked = vars.price !== false;
+  document.getElementById('varZone').checked = vars.zone !== false;
+  document.getElementById('varDetail').checked = vars.detail !== false;
+  msgConfigLoaded = true;
+}
+
+async function saveMessageConfig() {
+  if (!currentUser) return;
+  const btn = document.getElementById('btnSaveMsg');
+  const status = document.getElementById('msgSaveStatus');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  const template = document.getElementById('messageTemplate').value;
+  const vars = {
+    price: document.getElementById('varPrice').checked,
+    zone: document.getElementById('varZone').checked,
+    detail: document.getElementById('varDetail').checked,
+  };
+  const { error } = await sb.from('configs')
+    .update({ message_template: template, message_vars: vars })
+    .eq('user_id', currentUser.id);
+  if (error) {
+    status.textContent = 'Error al guardar: ' + error.message;
+    status.style.background = '#fff0f0'; status.style.color = '#c0392b';
+  } else {
+    status.textContent = 'Guardado correctamente';
+    status.style.background = '#f0fdf4'; status.style.color = '#059669';
+  }
+  status.style.display = 'block';
+  setTimeout(() => { status.style.display = 'none'; }, 3000);
+  btn.disabled = false; btn.textContent = 'Guardar';
+}
 
 // Token generation
 async function generateToken() {

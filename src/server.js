@@ -160,6 +160,18 @@ async function processPhoneResult(domText) {
       return;
     }
     pipelineLog(`Phone found: ${phone} — queuing WhatsApp`);
+    // Fetch user message template & vars
+    let userTemplate, userVars;
+    try {
+      const userId = await getUserId();
+      if (userId) {
+        const cfg = await sbGetConfig(userId);
+        if (cfg) {
+          userTemplate = cfg.message_template || undefined;
+          userVars = cfg.message_vars || undefined;
+        }
+      }
+    } catch { /* use defaults */ }
     const contact = {
       phone,
       url: prop.url,
@@ -167,6 +179,8 @@ async function processPhoneResult(domText) {
       zone: prop.zone,
       price: prop.price,
       name: prop.name || '',
+      template: userTemplate,
+      vars: userVars,
     };
     // Build message via Claude
     let message;

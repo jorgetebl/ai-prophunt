@@ -69,6 +69,7 @@ export default async (req) => {
     mode: 'subscription',
     payment_method_types: ['card'],
     line_items: [{ price: priceId, quantity: 1 }],
+    allow_promotion_codes: true,
     success_url: `${origin}/dashboard.html?checkout=success`,
     cancel_url: `${origin}/?checkout=cancelled`,
     metadata: { supabase_user_id: user.id, plan },

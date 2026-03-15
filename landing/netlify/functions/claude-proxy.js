@@ -151,44 +151,61 @@ ${truncated}`,
   }
 }
 
-async function buildMessage(contact) {
-  const msg = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 512,
-    messages: [{
-      role: 'user',
-      content: `Eres Juanan Gomis, agente API profesional en REMAX Experience (Palma de Mallorca).
-Escribe un WhatsApp para captar a un particular que vende su piso. Usa esta plantilla base pero personalízala:
+const DEFAULT_TEMPLATE = `Hola{{nombre}}, soy Juanan Gomis agente inmobiliario profesional
 
----
-Hola{{nombre_parte}}, soy Juanan Gomis agente Api profesional y asociado a REMAX EXPERIENCE
-
-He visto tu {{tipo}} en {{zona}} que tienes en {{portal}}{{precio_parte}}. {{detalle}}
+He visto tu {{tipo}} en {{zona}} que tienes en {{portal}}{{precio}}. {{detalle}}
 
 No te escribo para convencerte de trabajar con una agencia 🙂
 
 Solo comentarte algo: vender por tu cuenta es totalmente posible, pero vender bien, en menos tiempo y sin tener que bajar el precio es lo complicado.
 
-En REMAX trabajamos con una red de 21 oficinas en Palma y más de 170 agentes, además de una inversión fuerte en marketing digital para llegar al comprador adecuado.
+Si algun dia te apetece ver como lo trabajariamos y luego decides si te aporta valor o no, llamame y lo vemos sin ningun compromiso.`;
 
-Si algún día te apetece ver cómo lo trabajaríamos y luego decides si te aporta valor o no, llámame y lo vemos sin ningún compromiso.
+async function buildMessage(contact) {
+  const template = contact.template || DEFAULT_TEMPLATE;
+  const vars = contact.vars || { price: true, zone: true, detail: true };
+
+  // Build data lines based on active vars
+  const dataLines = [
+    `- Nombre vendedor: ${contact.name || 'desconocido'}`,
+    `- Portal: ${contact.portal || 'el portal'}`,
+    `- Tipo: ${contact.propertyType || 'vivienda'}`,
+  ];
+  if (vars.zone !== false) dataLines.push(`- Zona: ${contact.zone || 'Palma de Mallorca'}`);
+  if (vars.price !== false) dataLines.push(`- Precio: ${contact.price ? Number(contact.price).toLocaleString('es-ES') + ' €' : 'desconocido'}`);
+  if (vars.detail !== false) dataLines.push(`- Detalle extra: ${contact.detail || ''}`);
+
+  // Build instructions based on active vars
+  const instructions = [
+    '- Si hay nombre: "Hola [nombre]," — si no hay nombre: "Hola,"',
+    '- Reemplaza {{tipo}}, {{zona}}, {{portal}} con los datos reales',
+    '- Manten el tono profesional pero cercano',
+    '- Devuelve SOLO el mensaje, sin comillas, sin explicaciones',
+  ];
+  if (vars.price !== false) instructions.push('- Si hay precio: incluye "por [precio]" — si no hay precio: omite {{precio}}');
+  else instructions.push('- NO menciones el precio, elimina {{precio}} de la plantilla');
+  if (vars.zone !== false) instructions.push('- Incluye la zona/direccion del inmueble');
+  else instructions.push('- NO menciones la zona/direccion, usa algo generico en lugar de {{zona}}');
+  if (vars.detail !== false) instructions.push('- {{detalle}}: UNA frase natural (max 20 palabras) mencionando algo concreto y positivo del inmueble');
+  else instructions.push('- NO anadaas detalle extra, elimina {{detalle}} de la plantilla');
+
+  const msg = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 512,
+    messages: [{
+      role: 'user',
+      content: `Eres un agente inmobiliario profesional.
+Escribe un WhatsApp para captar a un particular que vende su piso. Usa esta plantilla base pero personalizala:
+
+---
+${template}
 ---
 
 Datos del inmueble:
-- Nombre vendedor: ${contact.name || 'desconocido'}
-- Zona: ${contact.zone || 'Palma de Mallorca'}
-- Portal: ${contact.portal || 'el portal'}
-- Precio: ${contact.price ? Number(contact.price).toLocaleString('es-ES') + ' €' : 'desconocido'}
-- Tipo: ${contact.propertyType || 'vivienda'}
-- Detalle extra: ${contact.detail || ''}
+${dataLines.join('\n')}
 
 Instrucciones:
-- Si hay nombre: "Hola [nombre]," — si no hay nombre: "Hola,"
-- Reemplaza {{tipo}}, {{zona}}, {{portal}} con los datos reales
-- Si hay precio: "por [precio]" — si no hay precio: omite esa parte
-- {{detalle}}: UNA frase natural (máx 20 palabras) mencionando algo concreto y positivo del inmueble
-- Mantén el tono profesional pero cercano
-- Devuelve SOLO el mensaje, sin comillas, sin explicaciones`,
+${instructions.join('\n')}`,
     }],
   });
 

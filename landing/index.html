@@ -53,16 +53,6 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
 }
-.remax-badge {
-  background: #DC0032;
-  color: white;
-  font-size: 0.6rem;
-  font-weight: 700;
-  padding: 0.2rem 0.5rem;
-  border-radius: 3px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
 .hero-content h2 {
   font-size: 2.4rem;
   font-weight: 700;
@@ -497,7 +487,6 @@ body {
     <div class="hero-content">
       <div class="brand">
         <span class="brand-name">AI PropHunt</span>
-        <span class="remax-badge">REMAX</span>
       </div>
       <h2>Capta inmuebles de particulares mientras duermes</h2>
       <p>Detecta propiedades en portales, extrae el contacto del vendedor y envia un WhatsApp personalizado. Todo automatico, cada dia.</p>
@@ -719,8 +708,24 @@ async function handleLogin(e) {
   try {
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message);
-    showSuccess('Login correcto. Redirigiendo...');
-    setTimeout(() => { window.location.href = 'dashboard.html'; }, 1000);
+    // Check subscription before deciding where to go
+    const { data: sub } = await sb.from('subscriptions')
+      .select('status')
+      .eq('user_id', data.user.id)
+      .eq('status', 'active')
+      .single();
+    if (sub) {
+      showSuccess('Login correcto. Redirigiendo...');
+      setTimeout(() => { window.location.href = 'dashboard.html'; }, 1000);
+    } else {
+      // No subscription — show plan selection
+      document.getElementById('registerForm').style.display = 'none';
+      document.getElementById('loginForm').style.display = 'none';
+      document.querySelector('.tabs').style.display = 'none';
+      document.querySelector('.panel-inner > h1').style.display = 'none';
+      document.querySelector('.panel-inner > .sub').style.display = 'none';
+      document.getElementById('planBox').style.display = 'block';
+    }
   } catch (err) { showError(err.message); }
   btn.disabled = false; btn.textContent = 'Entrar';
 }
@@ -745,7 +750,24 @@ function copyInstallCmd() {
 
 (async () => {
   const { data: { session } } = await sb.auth.getSession();
-  if (session) window.location.href = 'dashboard.html';
+  if (!session) return;
+  // Check if user has active subscription before redirecting
+  const { data: sub } = await sb.from('subscriptions')
+    .select('status')
+    .eq('user_id', session.user.id)
+    .eq('status', 'active')
+    .single();
+  if (sub) {
+    window.location.href = 'dashboard.html';
+  } else {
+    // Logged in but no subscription — show plan selection
+    document.getElementById('registerForm').style.display = 'none';
+    document.getElementById('loginForm').style.display = 'none';
+    document.querySelector('.tabs').style.display = 'none';
+    document.querySelector('.panel-inner > h1').style.display = 'none';
+    document.querySelector('.panel-inner > .sub').style.display = 'none';
+    document.getElementById('planBox').style.display = 'block';
+  }
 })();
 
 async function startCheckout(plan) {
