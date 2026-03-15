@@ -571,41 +571,32 @@ body {
         </a>
       </div>
 
-      <!-- Post-register setup -->
-      <div id="setupBox" class="setup-box">
+      <!-- Post-register: choose plan -->
+      <div id="planBox" class="setup-box">
         <div class="check-circle">&#x2705;</div>
         <h2>Cuenta creada</h2>
-        <p class="sub">Solo queda instalar el software en tu Mac</p>
+        <p class="sub">Elige tu plan para continuar</p>
 
-        <div class="setup-steps">
-          <div class="setup-step">
-            <div class="step-num">1</div>
-            <div class="step-text"><strong>Abre Terminal en tu Mac</strong><br><span style="color:#888;">Pulsa <kbd style="background:#eee;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.8rem;border:1px solid #ddd;">Cmd</kbd> + <kbd style="background:#eee;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.8rem;border:1px solid #ddd;">Espacio</kbd>, escribe <strong>Terminal</strong> y pulsa Enter</span></div>
+        <div style="display: flex; flex-direction: column; gap: 1rem; text-align: left;">
+          <div style="border: 1.5px solid #e0e0e0; border-radius: 12px; padding: 1.25rem; cursor: pointer; transition: border-color 0.2s;" onclick="startCheckout('basico')" onmouseover="this.style.borderColor='#1a1a2e'" onmouseout="this.style.borderColor='#e0e0e0'">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <strong style="font-size: 1rem;">Basico</strong>
+              <span style="font-size: 1.25rem; font-weight: 700;">29€<span style="font-size: 0.8rem; font-weight: 400; color: #888;">/mes</span></span>
+            </div>
+            <div style="font-size: 0.82rem; color: #888;">Hasta 15 contactos/dia · 3 portales · Dashboard</div>
           </div>
-          <div class="setup-step">
-            <div class="step-num">2</div>
-            <div class="step-text"><strong>Copia y pega este comando</strong><br><span style="color:#888;">Pulsa el boton, ve a Terminal y pega con <kbd style="background:#eee;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.8rem;border:1px solid #ddd;">Cmd</kbd> + <kbd style="background:#eee;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.8rem;border:1px solid #ddd;">V</kbd></span></div>
-          </div>
-        </div>
 
-        <button class="btn-primary" onclick="copyInstallCmd()" id="btnCopyInstall" style="margin-bottom: 0.75rem;">
-          Copiar comando de instalacion
-        </button>
-        <div class="install-cmd">
-          <code id="cmd"></code>
-        </div>
-
-        <div class="setup-steps" style="margin-top: 1.25rem;">
-          <div class="setup-step">
-            <div class="step-num">3</div>
-            <div class="step-text"><strong>Sigue las instrucciones del instalador</strong><br><span style="color:#888;">Te pedira tu contrasena (la que acabas de crear) y vinculara tu WhatsApp escaneando un QR</span></div>
+          <div style="border: 2px solid #DC0032; border-radius: 12px; padding: 1.25rem; cursor: pointer; position: relative; background: #fff5f7; transition: opacity 0.2s;" onclick="startCheckout('pro')" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+            <div style="position: absolute; top: -10px; right: 12px; background: #DC0032; color: white; font-size: 0.6rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.05em;">Popular</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <strong style="font-size: 1rem;">Pro</strong>
+              <span style="font-size: 1.25rem; font-weight: 700;">49€<span style="font-size: 0.8rem; font-weight: 400; color: #888;">/mes</span></span>
+            </div>
+            <div style="font-size: 0.82rem; color: #888;">Hasta 50 contactos/dia · Soporte prioridad · Nuevas funciones</div>
           </div>
         </div>
 
-        <div style="margin-top:1.5rem; padding-top: 1.25rem; border-top: 1px solid #f0f0f0;">
-          <p style="font-size: 0.85rem; color: #888; margin-bottom: 0.75rem;">Cuando termine la instalacion:</p>
-          <a href="dashboard.html" class="btn-primary" style="background: #059669; display: inline-block; width: auto; padding: 0.7rem 2rem;">Abrir dashboard</a>
-        </div>
+        <p style="font-size: 0.78rem; color: #bbb; margin-top: 1.25rem;">Sin permanencia. Cancela cuando quieras.</p>
       </div>
     </div>
   </div>
@@ -625,7 +616,7 @@ body {
       <ul>
         <li>Hasta 15 contactos por dia</li>
         <li>Dashboard en tiempo real</li>
-        <li>Mensajes WhatsApp personalizados</li>
+        <li>Mensajes WhatsApp con IA generativa</li>
         <li>Idealista, Fotocasa, Pisos.com</li>
         <li>Soporte por email</li>
       </ul>
@@ -641,11 +632,10 @@ body {
       <div class="price">49€ <span>/mes</span></div>
       <div class="plan-desc">Para maxima captacion</div>
       <ul>
-        <li>Contactos ilimitados por dia</li>
+        <li>Hasta 50 contactos por dia</li>
         <li>Todo lo del plan Basico</li>
-        <li>IA generativa en cada mensaje</li>
         <li>Prioridad en soporte</li>
-        <li>Acceso a nuevas funciones</li>
+        <li>Acceso anticipado a nuevas funciones</li>
       </ul>
       <button class="btn-checkout primary" onclick="startCheckout('pro')">
         Empezar con Pro
@@ -667,7 +657,7 @@ function showTab(tab) {
   document.getElementById('registerForm').style.display = tab === 'register' ? '' : 'none';
   document.getElementById('loginForm').style.display = tab === 'login' ? '' : 'none';
   document.getElementById('closedBox').style.display = 'none';
-  document.getElementById('setupBox').style.display = 'none';
+  document.getElementById('planBox').style.display = 'none';
   hideMessages();
 }
 
@@ -708,20 +698,13 @@ async function handleRegister(e) {
     if (error) throw new Error(error.message);
     if (data.user) {
       await sb.from('configs').insert({ user_id: data.user.id, max_contacts_per_day: 15, min_delay_minutes: 2 });
-      // Generate setup token for the new user
-      const { data: token, error: tokenErr } = await sb.rpc('create_setup_token');
-      if (!tokenErr && token) {
-        setToken(token);
-      } else {
-        document.getElementById('setupToken').textContent = 'Error — genera uno desde el dashboard';
-      }
-      // Show setup screen instead of redirecting
+      // Show plan selection instead of setup
       document.getElementById('registerForm').style.display = 'none';
       document.getElementById('loginForm').style.display = 'none';
       document.querySelector('.tabs').style.display = 'none';
       document.querySelector('.panel-inner > h1').style.display = 'none';
       document.querySelector('.panel-inner > .sub').style.display = 'none';
-      document.getElementById('setupBox').style.display = 'block';
+      document.getElementById('planBox').style.display = 'block';
     }
   } catch (err) { showError(err.message); }
   btn.disabled = false; btn.textContent = 'Crear cuenta';

@@ -60,7 +60,13 @@ export default async (req) => {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'stripe_subscription_id' });
 
-      console.log(`Subscription upserted: ${userId} → ${plan}`);
+      // Update max_contacts_per_day based on plan
+      const maxContacts = plan === 'pro' ? 50 : 15;
+      await supabase.from('configs')
+        .update({ max_contacts_per_day: maxContacts })
+        .eq('user_id', userId);
+
+      console.log(`Subscription upserted: ${userId} → ${plan} (${maxContacts} contacts/day)`);
     } else {
       console.warn(`No user found for Stripe customer ${customerId}`);
     }

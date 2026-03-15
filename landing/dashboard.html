@@ -646,6 +646,25 @@ function copyInstallCmd() {
 
 checkAuth();
 setInterval(refreshAll, 30000);
+
+// Handle post-checkout: auto-generate token and show install instructions
+(async () => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('checkout') !== 'success') return;
+  // Clean URL
+  window.history.replaceState({}, '', '/dashboard.html');
+  // Wait for auth to be ready
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return;
+  // Auto-generate setup token
+  const { data: token, error } = await sb.rpc('create_setup_token');
+  if (error || !token) return;
+  // Show setup section with token
+  document.getElementById('tokenValue').textContent = token;
+  document.getElementById('tokenDisplay').style.display = 'block';
+  // Scroll to setup section
+  document.getElementById('setup-section').scrollIntoView({ behavior: 'smooth' });
+})();
 </script>
 </body>
 </html>
