@@ -113,11 +113,40 @@ Después de cada acción (éxito o fallo), actualizar:
 09:30 - Done. 6/8 processed, 5 sent, 1 duplicate, 2 failed (no phone)
 ```
 
-## GitHub
+## Herramientas y cuentas
 
-- **Siempre usar la cuenta `jorgetebl`** para operaciones con `gh` (push, pull, etc.)
-- Si `gh auth status` muestra otra cuenta activa, hacer `gh auth switch --user jorgetebl` antes de push
+### GitHub (`gh` CLI)
+- **Cuenta: `jorgetebl`** — siempre antes de push/PR/release:
+  ```bash
+  gh auth switch --user jorgetebl
+  ```
 - Repo: `jorgetebl/ai-prophunt`
+
+### Supabase CLI
+- **Cuenta: `jorgetebl`** — usar siempre con el token de la cuenta:
+  ```bash
+  SUPABASE_ACCESS_TOKEN=sbp_aea1df79226c21e0d7bce3bd3c5bf4a3a172a60c supabase <comando>
+  ```
+- Proyecto: `ai-prophunt` — ref: `uolymolzgesvxucmbcgw`
+- Ya linkeado. Para ejecutar SQL arbitrario usar la Management API:
+  ```bash
+  TOKEN=sbp_aea1df79226c21e0d7bce3bd3c5bf4a3a172a60c
+  curl -s -X POST "https://api.supabase.com/v1/projects/uolymolzgesvxucmbcgw/database/query" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"query\": \"<SQL>\"}"
+  ```
+- Migraciones en `supabase/` — aplicar con el curl de arriba o con `supabase db push` (con el token)
+
+### Netlify
+- Proyecto: `prophunt-app` — site ID: `9d962b92-db7c-43cb-8343-1875c03fce2b`
+- URL: `https://prophunt-app.netlify.app`
+- Deploy: `cd landing && netlify deploy --prod`
+- Env vars: `cd landing && netlify env:set KEY VALUE`
+- Functions en `landing/netlify/functions/` — se despliegan automáticamente con el deploy
+- El `.netlify/state.json` en `landing/` ya está configurado con el site ID correcto
+
+### GitHub
 
 ## Reglas de seguridad
 
