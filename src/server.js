@@ -160,8 +160,8 @@ async function processPhoneResult(domText) {
       return;
     }
     pipelineLog(`Phone found: ${phone} — queuing WhatsApp`);
-    // Fetch user message template & vars
-    let userTemplate, userVars;
+    // Fetch user config (template, vars, rate limit)
+    let userTemplate, userVars, maxPerDay = 15;
     try {
       const userId = await getUserId();
       if (userId) {
@@ -169,6 +169,18 @@ async function processPhoneResult(domText) {
         if (cfg) {
           userTemplate = cfg.message_template || undefined;
           userVars = cfg.message_vars || undefined;
+          maxPerDay = cfg.max_contacts_per_day || 15;
+        }
+        // Rate limit: check today's contact count
+        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+        const todayContacts = await getContacts(userId, { date: today });
+        const sentToday = todayContacts.filter(c => ['sent', 'test', 'dry_run', 'queued'].includes(c.status)).length;
+        if (sentToday >= maxPerDay) {
+          pipelineLog(`Rate limit reached: ${sentToday}/${maxPerDay} contacts today — stopping pipeline`);
+          pipeline.results.push({ ...prop, phone, status: 'skipped_rate_limit' });
+          pipeline.state = 'DONE';
+          pipelineLog(`Done (rate limit). ${pipeline.results.length} properties processed.`);
+          return;
         }
       }
     } catch { /* use defaults */ }
@@ -333,6 +345,22 @@ async function handleRunBetterplace(_req, res) {
   if (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') {
     return json(res, 409, { error: 'Pipeline already running', state: pipeline.state });
   }
+
+  // Rate limit check before starting
+  try {
+    const userId = await getUserId();
+    if (userId) {
+      const cfg = await sbGetConfig(userId);
+      const maxPerDay = cfg?.max_contacts_per_day || 15;
+      const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+      const todayContacts = await getContacts(userId, { date: today });
+      const sentToday = todayContacts.filter(c => ['sent', 'test', 'dry_run', 'queued'].includes(c.status)).length;
+      if (sentToday >= maxPerDay) {
+        log(`Rate limit: ${sentToday}/${maxPerDay} — pipeline blocked`);
+        return json(res, 429, { error: `Limite diario alcanzado (${sentToday}/${maxPerDay})` });
+      }
+    }
+  } catch { /* proceed anyway */ }
 
   // Reset pipeline and navigate to Gmail
   pipeline = {
