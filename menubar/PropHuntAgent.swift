@@ -7,20 +7,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var serverRunning = false
     let port = 3456
     let projectDir: String = {
-        // The app lives in menubar/ inside the project
+        // 1. Read from ~/.prophunt/install_dir (set by installer)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let installDirFile = home + "/.prophunt/install_dir"
+        if let saved = try? String(contentsOfFile: installDirFile, encoding: .utf8) {
+            let dir = saved.trimmingCharacters(in: .whitespacesAndNewlines)
+            if FileManager.default.fileExists(atPath: dir + "/run.sh") {
+                return dir
+            }
+        }
+        // 2. Check relative to app bundle (dev mode: menubar/ inside project)
         let bundle = Bundle.main.bundlePath
         let menubarDir = (bundle as NSString).deletingLastPathComponent
         let projectDir = (menubarDir as NSString).deletingLastPathComponent
-        // If running from compiled binary directly in menubar/
         if FileManager.default.fileExists(atPath: projectDir + "/run.sh") {
             return projectDir
         }
-        // Fallback: look for the project relative to the binary
-        let cwd = FileManager.default.currentDirectoryPath
-        if FileManager.default.fileExists(atPath: cwd + "/run.sh") {
-            return cwd
+        // 3. Common install locations
+        for candidate in [home + "/ai-prophunt", home + "/Documents/ai-prophunt"] {
+            if FileManager.default.fileExists(atPath: candidate + "/run.sh") {
+                return candidate
+            }
         }
-        return (ProcessInfo.processInfo.environment["PROPHUNT_DIR"] ?? cwd)
+        // 4. Env var or cwd
+        return (ProcessInfo.processInfo.environment["PROPHUNT_DIR"] ?? FileManager.default.currentDirectoryPath)
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
