@@ -6,6 +6,8 @@
 <title>AI PropHunt — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -353,6 +355,128 @@ tr:hover td { background: #f9fafb; }
 }
 .log-viewer:empty::after { content: 'Sin logs para hoy'; color: var(--gray); }
 
+/* ── Zone modal ── */
+.zone-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.zone-modal {
+  background: white;
+  border-radius: 16px;
+  max-width: 900px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.zone-modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.zone-modal-header h2 { font-size: 1.1rem; font-weight: 700; }
+.zone-counter {
+  background: var(--dark);
+  color: white;
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+#zoneMap { height: 450px; width: 100%; }
+.zone-modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.zone-legend {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.78rem;
+  color: var(--gray);
+}
+.zone-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.zone-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+.zone-legend-dot.available { background: #10b981; }
+.zone-legend-dot.selected { background: #3b82f6; }
+.zone-legend-dot.taken { background: #ef4444; }
+.btn-confirm-zones {
+  background: var(--dark);
+  color: white;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-confirm-zones:hover { background: #2d2d4a; }
+.btn-confirm-zones:disabled { opacity: 0.5; cursor: not-allowed; }
+.zone-error {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  display: none;
+}
+
+/* ── My zones section ── */
+.zone-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.zone-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  background: #eff6ff;
+  color: #1e40af;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+.zone-badge::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: #3b82f6;
+  border-radius: 50%;
+}
+.zone-badge-remove {
+  background: none;
+  border: none;
+  color: #93a3b8;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0 0 0.25rem;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+.zone-badge-remove:hover { color: #dc2626; }
+
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .login-overlay { flex-direction: column; }
@@ -360,6 +484,8 @@ tr:hover td { background: #f9fafb; }
   .login-panel { width: 100%; }
   .sidebar { display: none; }
   .cards { grid-template-columns: repeat(2, 1fr); }
+  #zoneMap { height: 300px; }
+  .zone-modal-footer { flex-direction: column; align-items: stretch; }
 }
 @media (max-width: 500px) {
   .cards { grid-template-columns: 1fr 1fr; }
@@ -411,11 +537,12 @@ tr:hover td { background: #f9fafb; }
       <span class="brand-name">AI PropHunt</span>
     </div>
     <nav>
-      <a href="#" class="active"><span class="icon">&#x1F4CA;</span> Dashboard</a>
-      <a href="#contacts-section" onclick="setFilter('all')"><span class="icon">&#x1F4CB;</span> Contactos</a>
-      <a href="#logs-section"><span class="icon">&#x1F4DD;</span> Logs</a>
-      <a href="#message-section"><span class="icon">&#x1F4AC;</span> Mensaje</a>
-      <a href="#setup-section"><span class="icon">&#x2699;&#xFE0F;</span> Configuracion</a>
+      <a href="#" class="active" onclick="navTo(event, 'page-dashboard')"><span class="icon">&#x1F4CA;</span> Dashboard</a>
+      <a href="#" onclick="navTo(event, 'page-contacts')"><span class="icon">&#x1F4CB;</span> Contactos</a>
+      <a href="#" onclick="navTo(event, 'page-logs')"><span class="icon">&#x1F4DD;</span> Logs</a>
+      <a href="#" onclick="navTo(event, 'page-message')"><span class="icon">&#x1F4AC;</span> Mensaje</a>
+      <a href="#" onclick="navTo(event, 'page-zones')"><span class="icon">&#x1F5FA;&#xFE0F;</span> Mis Zonas</a>
+      <a href="#" onclick="navTo(event, 'page-setup')"><span class="icon">&#x2699;&#xFE0F;</span> Configuracion</a>
     </nav>
     <div class="sidebar-footer">
       <span class="user-email" id="userEmail"></span>
@@ -427,120 +554,170 @@ tr:hover td { background: #f9fafb; }
   <main class="main">
     <div class="main-header">
       <div>
-        <h1>Dashboard</h1>
+        <h1 id="pageTitle">Dashboard</h1>
         <span class="date" id="headerDate"></span>
       </div>
       <button class="btn-refresh" onclick="refreshAll()">Actualizar</button>
     </div>
 
-    <!-- Summary cards -->
-    <div class="cards">
-      <div class="card today">
-        <div class="label">Contactos hoy</div>
-        <div class="value" id="cardToday">-</div>
-      </div>
-      <div class="card total">
-        <div class="label">Total</div>
-        <div class="value" id="cardTotal">-</div>
-      </div>
-      <div class="card sent">
-        <div class="label">Enviados</div>
-        <div class="value" id="cardSent">-</div>
-      </div>
-      <div class="card failed">
-        <div class="label">Fallidos</div>
-        <div class="value" id="cardFailed">-</div>
-      </div>
-    </div>
-
-    <!-- Contacts table -->
-    <div class="section" id="contacts-section">
-      <div class="section-header">
-        <h2>Contactos</h2>
-        <div class="filter-tabs">
-          <button class="filter-tab active" data-filter="today" onclick="setFilter('today')">Hoy</button>
-          <button class="filter-tab" data-filter="week" onclick="setFilter('week')">Semana</button>
-          <button class="filter-tab" data-filter="all" onclick="setFilter('all')">Todos</button>
+    <!-- PAGE: Dashboard -->
+    <div class="page" id="page-dashboard">
+      <div class="cards">
+        <div class="card today">
+          <div class="label">Contactos hoy</div>
+          <div class="value" id="cardToday">-</div>
+        </div>
+        <div class="card total">
+          <div class="label">Total</div>
+          <div class="value" id="cardTotal">-</div>
+        </div>
+        <div class="card sent">
+          <div class="label">Enviados</div>
+          <div class="value" id="cardSent">-</div>
+        </div>
+        <div class="card failed">
+          <div class="label">Fallidos</div>
+          <div class="value" id="cardFailed">-</div>
         </div>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Telefono</th>
-              <th>Zona</th>
-              <th>Portal</th>
-              <th>Precio</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody id="contactsBody">
-            <tr><td colspan="6" class="empty-msg">Cargando...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Logs -->
-    <div class="section" id="logs-section">
-      <div class="section-header">
-        <h2>Log de hoy</h2>
-      </div>
-      <div class="log-viewer" id="logViewer"></div>
-    </div>
-
-    <!-- Message template -->
-    <div class="section" id="message-section">
-      <div class="section-header">
-        <h2>Plantilla de mensaje</h2>
-        <button class="btn-refresh" onclick="saveMessageConfig()" id="btnSaveMsg" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.4rem 1rem;">Guardar</button>
-      </div>
-      <div style="padding: 1.5rem;">
-        <p style="font-size: 0.85rem; color: var(--gray); margin-bottom: 1rem;">
-          La IA usara esta plantilla como base y la personalizara para cada inmueble usando los datos activados.
-        </p>
-        <textarea id="messageTemplate" style="width: 100%; min-height: 200px; padding: 0.85rem; border: 1.5px solid #e0e0e0; border-radius: 10px; font-family: inherit; font-size: 0.88rem; line-height: 1.55; resize: vertical; background: #fafafa;" placeholder="Escribe tu plantilla de mensaje..."></textarea>
-        <div style="margin-top: 1.25rem;">
-          <p style="font-size: 0.8rem; font-weight: 600; color: var(--dark); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">Datos que la IA incluira en el mensaje</p>
-          <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
-            <input type="checkbox" id="varPrice" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
-            <span><strong>Precio</strong> — menciona el precio del inmueble</span>
-          </label>
-          <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
-            <input type="checkbox" id="varZone" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
-            <span><strong>Direccion/zona</strong> — menciona la ubicacion del inmueble</span>
-          </label>
-          <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
-            <input type="checkbox" id="varDetail" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
-            <span><strong>Detalle de la descripcion</strong> — la IA lee la ficha del inmueble y anade un comentario personalizado</span>
-          </label>
+      <div class="section">
+        <div class="section-header">
+          <h2>Ultimos contactos</h2>
         </div>
-        <div id="msgSaveStatus" style="display: none; margin-top: 1rem; padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.85rem;"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Telefono</th>
+                <th>Zona</th>
+                <th>Portal</th>
+                <th>Precio</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="dashContactsBody">
+              <tr><td colspan="6" class="empty-msg">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
-    <!-- Setup / Config -->
-    <div class="section" id="setup-section">
-      <div class="section-header">
-        <h2>Configuracion del Mac</h2>
-      </div>
-      <div style="padding: 1.5rem;">
-        <p style="font-size: 0.9rem; color: var(--gray); margin-bottom: 1.25rem;">
-          Genera un token de instalacion para vincular tu Mac con tu cuenta. El token es de un solo uso y expira en 1 hora.
-        </p>
-        <button class="btn-refresh" onclick="generateToken()" id="btnGenToken" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.55rem 1.25rem;">
-          Generar token de instalacion
-        </button>
-        <div id="tokenDisplay" style="display: none; margin-top: 1.25rem;">
-          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.25rem; text-align: center;">
-            <div style="font-size: 0.75rem; color: var(--gray); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Tu token de instalacion</div>
-            <div id="tokenValue" style="font-size: 2rem; font-weight: 700; letter-spacing: 0.15em; color: var(--dark); font-family: 'SF Mono', 'Menlo', monospace;"></div>
-            <div style="font-size: 0.78rem; color: var(--gray); margin-top: 0.5rem;">Expira en 1 hora. Introducelo en el instalador cuando te lo pida.</div>
+    <!-- PAGE: Contactos -->
+    <div class="page" id="page-contacts" style="display:none;">
+      <div class="section">
+        <div class="section-header">
+          <h2>Contactos</h2>
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="today" onclick="setFilter('today')">Hoy</button>
+            <button class="filter-tab" data-filter="week" onclick="setFilter('week')">Semana</button>
+            <button class="filter-tab" data-filter="all" onclick="setFilter('all')">Todos</button>
           </div>
-          <div style="margin-top: 1rem; background: var(--dark); border-radius: 8px; padding: 0.65rem 1rem; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.75rem; color: #ccc; position: relative;">
-            <code id="installCmd">curl -sL https://raw.githubusercontent.com/jorgetebl/ai-prophunt/main/install.sh -o /tmp/prophunt-install.sh &amp;&amp; bash /tmp/prophunt-install.sh</code>
-            <button onclick="copyInstallCmd()" style="position: absolute; top: 0.4rem; right: 0.4rem; background: rgba(255,255,255,0.1); color: #999; border: none; border-radius: 4px; padding: 0.15rem 0.45rem; font-size: 0.65rem; cursor: pointer;">copiar</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Telefono</th>
+                <th>Zona</th>
+                <th>Portal</th>
+                <th>Precio</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="contactsBody">
+              <tr><td colspan="6" class="empty-msg">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: Logs -->
+    <div class="page" id="page-logs" style="display:none;">
+      <div class="section">
+        <div class="section-header">
+          <h2>Log de hoy</h2>
+        </div>
+        <div class="log-viewer" id="logViewer"></div>
+      </div>
+    </div>
+
+    <!-- PAGE: Mensaje -->
+    <div class="page" id="page-message" style="display:none;">
+      <div class="section">
+        <div class="section-header">
+          <h2>Plantilla de mensaje</h2>
+          <button class="btn-refresh" onclick="saveMessageConfig()" id="btnSaveMsg" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.4rem 1rem;">Guardar</button>
+        </div>
+        <div style="padding: 1.5rem;">
+          <p style="font-size: 0.85rem; color: var(--gray); margin-bottom: 1rem;">
+            La IA usara esta plantilla como base y la personalizara para cada inmueble usando los datos activados.
+          </p>
+          <textarea id="messageTemplate" style="width: 100%; min-height: 200px; padding: 0.85rem; border: 1.5px solid #e0e0e0; border-radius: 10px; font-family: inherit; font-size: 0.88rem; line-height: 1.55; resize: vertical; background: #fafafa;" placeholder="Escribe tu plantilla de mensaje..."></textarea>
+          <div style="margin-top: 1.25rem;">
+            <p style="font-size: 0.8rem; font-weight: 600; color: var(--dark); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">Datos que la IA incluira en el mensaje</p>
+            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
+              <input type="checkbox" id="varPrice" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
+              <span><strong>Precio</strong> — menciona el precio del inmueble</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
+              <input type="checkbox" id="varZone" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
+              <span><strong>Direccion/zona</strong> — menciona la ubicacion del inmueble</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
+              <input type="checkbox" id="varDetail" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
+              <span><strong>Detalle de la descripcion</strong> — la IA lee la ficha del inmueble y anade un comentario personalizado</span>
+            </label>
+          </div>
+          <div id="msgSaveStatus" style="display: none; margin-top: 1rem; padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.85rem;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: Mis Zonas -->
+    <div class="page" id="page-zones" style="display:none;">
+      <div class="section">
+        <div class="section-header">
+          <h2>Mis Zonas Exclusivas</h2>
+          <span id="zoneCountLabel" style="font-size: 0.82rem; color: var(--gray); font-weight: 500;"></span>
+        </div>
+        <div style="padding: 1.25rem;">
+          <div class="zone-badges" id="zoneBadges"></div>
+          <div id="zonesEmpty" style="text-align: center; padding: 1.5rem 0;">
+            <p style="color: var(--gray); font-size: 0.9rem; margin-bottom: 1rem;">No tienes zonas asignadas todavia.</p>
+            <button class="btn-refresh" onclick="openZoneSelector()" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.55rem 1.25rem;">Seleccionar zonas</button>
+          </div>
+          <button class="btn-refresh" onclick="openZoneSelector()" id="btnChangeZones" style="margin-top: 1rem; display: none;">Anadir zonas</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: Configuracion -->
+    <div class="page" id="page-setup" style="display:none;">
+      <div class="section">
+        <div class="section-header">
+          <h2>Configuracion del Mac</h2>
+        </div>
+        <div style="padding: 1.5rem;">
+          <p style="font-size: 0.9rem; color: var(--gray); margin-bottom: 1.25rem;">
+            Genera un token de instalacion para vincular tu Mac con tu cuenta. El token es de un solo uso y expira en 1 hora.
+          </p>
+          <button class="btn-refresh" onclick="generateToken()" id="btnGenToken" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.55rem 1.25rem;">
+            Generar token de instalacion
+          </button>
+          <div id="tokenDisplay" style="display: none; margin-top: 1.25rem;">
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.25rem; text-align: center;">
+              <div style="font-size: 0.75rem; color: var(--gray); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Tu token de instalacion</div>
+              <div id="tokenValue" style="font-size: 2rem; font-weight: 700; letter-spacing: 0.15em; color: var(--dark); font-family: 'SF Mono', 'Menlo', monospace;"></div>
+              <div style="font-size: 0.78rem; color: var(--gray); margin-top: 0.5rem;">Expira en 1 hora. Introducelo en el instalador cuando te lo pida.</div>
+            </div>
+            <div style="margin-top: 1rem; background: var(--dark); border-radius: 8px; padding: 0.65rem 1rem; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.75rem; color: #ccc; position: relative;">
+              <code id="installCmd">curl -sL https://raw.githubusercontent.com/jorgetebl/ai-prophunt/main/install.sh -o /tmp/prophunt-install.sh &amp;&amp; bash /tmp/prophunt-install.sh</code>
+              <button onclick="copyInstallCmd()" style="position: absolute; top: 0.4rem; right: 0.4rem; background: rgba(255,255,255,0.1); color: #999; border: none; border-radius: 4px; padding: 0.15rem 0.45rem; font-size: 0.65rem; cursor: pointer;">copiar</button>
+            </div>
           </div>
         </div>
       </div>
@@ -548,6 +725,29 @@ tr:hover td { background: #f9fafb; }
 
   </main>
 </div>
+</div>
+
+<!-- Zone selector modal -->
+<div class="zone-overlay" id="zoneOverlay" style="display: none;" onclick="if(event.target===this)closeZoneSelector()">
+  <div class="zone-modal">
+    <div class="zone-modal-header">
+      <h2>Elige tus zonas exclusivas</h2>
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <span class="zone-counter" id="zoneSelCounter">0/0 zonas</span>
+        <button onclick="closeZoneSelector()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--gray);line-height:1;padding:0;">&times;</button>
+      </div>
+    </div>
+    <div id="zoneMap"></div>
+    <div class="zone-modal-footer">
+      <div class="zone-legend">
+        <div class="zone-legend-item"><div class="zone-legend-dot available"></div> Disponible</div>
+        <div class="zone-legend-item"><div class="zone-legend-dot selected"></div> Seleccionada</div>
+        <div class="zone-legend-item"><div class="zone-legend-dot taken"></div> Ocupada</div>
+      </div>
+      <div class="zone-error" id="zoneError"></div>
+      <button class="btn-confirm-zones" id="btnConfirmZones" onclick="confirmZones()" disabled>Confirmar mis zonas</button>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -558,6 +758,14 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
 let currentFilter = 'today';
+let userMaxContacts = 15;
+let userMaxZones = 1;
+let userZones = [];
+let zoneMap = null;
+let selectedZones = new Set();
+let takenZones = new Set();
+let zoneLayers = {};
+let isPostCheckout = false;
 
 function todayStr() { return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' }); }
 function weekAgoStr() { const d = new Date(); d.setDate(d.getDate() - 7); return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' }); }
@@ -624,7 +832,7 @@ async function loadContacts() {
     updateCards([]); return;
   }
   updateCards(contacts);
-  tbody.innerHTML = contacts.map(c => {
+  const renderRows = (rows) => rows.map(c => {
     const date = c.date_contacted ? c.date_contacted.substring(0, 16).replace('T', ' ') : '-';
     const zone = (c.zone || '-').length > 40 ? (c.zone || '').substring(0, 40) + '...' : (c.zone || '-');
     const price = c.price ? Number(c.price).toLocaleString('es-ES') + ' \u20ac' : '-';
@@ -632,12 +840,18 @@ async function loadContacts() {
     const cls = 'status-' + status.replace(/[^a-z_]/g, '');
     return `<tr><td>${esc(date)}</td><td>${esc(c.phone || '-')}</td><td title="${esc(c.zone || '')}">${esc(zone)}</td><td>${esc(c.portal || '-')}</td><td>${esc(price)}</td><td><span class="status ${cls}">${esc(status)}</span></td></tr>`;
   }).join('');
+  tbody.innerHTML = renderRows(contacts);
+  // Dashboard mini-table: show last 5 from today
+  const today = todayStr();
+  const todayContacts = contacts.filter(c => c.date_contacted && c.date_contacted.startsWith(today)).slice(0, 5);
+  const dashBody = document.getElementById('dashContactsBody');
+  dashBody.innerHTML = todayContacts.length ? renderRows(todayContacts) : '<tr><td colspan="6" class="empty-msg">Sin contactos hoy</td></tr>';
 }
 
 function updateCards(contacts) {
   const today = todayStr();
   const todayC = contacts.filter(c => c.date_contacted && c.date_contacted.startsWith(today));
-  document.getElementById('cardToday').textContent = todayC.length + '/15';
+  document.getElementById('cardToday').textContent = todayC.length + '/' + userMaxContacts;
   document.getElementById('cardTotal').textContent = contacts.length;
   document.getElementById('cardSent').textContent = contacts.filter(c => ['sent','test','dry_run'].includes(c.status)).length;
   document.getElementById('cardFailed').textContent = contacts.filter(c => c.status && (c.status.startsWith('failed') || c.status.startsWith('skipped'))).length;
@@ -659,19 +873,33 @@ function setFilter(f) {
   document.querySelectorAll('.filter-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === f));
   loadContacts();
 }
-function refreshAll() { loadContacts(); loadLogs(); loadMessageConfig(); }
+async function refreshAll() {
+  // Load user config (rate limit, zones)
+  if (currentUser) {
+    const { data: cfg } = await sb.from('configs')
+      .select('max_contacts_per_day, max_zones, zones')
+      .eq('user_id', currentUser.id).single();
+    if (cfg) {
+      userMaxContacts = cfg.max_contacts_per_day || 15;
+      userMaxZones = cfg.max_zones || 1;
+      userZones = cfg.zones || [];
+    }
+  }
+  renderZoneSection();
+  loadContacts(); loadLogs(); loadMessageConfig();
+}
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 // Message template
-const DEFAULT_TEMPLATE = `Hola{{nombre}}, soy Juanan Gomis agente inmobiliario profesional
+const DEFAULT_TEMPLATE = `Hola{{nombre}}, soy {{agente}}, agente inmobiliario profesional.
 
 He visto tu {{tipo}} en {{zona}} que tienes en {{portal}}{{precio}}. {{detalle}}
 
-No te escribo para convencerte de trabajar con una agencia 🙂
+No te escribo para convencerte de trabajar con una agencia.
 
 Solo comentarte algo: vender por tu cuenta es totalmente posible, pero vender bien, en menos tiempo y sin tener que bajar el precio es lo complicado.
 
-Si algun dia te apetece ver como lo trabajariamos y luego decides si te aporta valor o no, llamame y lo vemos sin ningun compromiso.`;
+Si algun dia te apetece ver como lo trabajariamos y luego decides si te aporta valor o no, contactame y lo vemos sin ningun compromiso.`;
 
 let msgConfigLoaded = false;
 async function loadMessageConfig() {
@@ -736,10 +964,260 @@ function copyInstallCmd() {
   });
 }
 
+// ── Zone map logic ──
+
+const pageTitles = {
+  'page-dashboard': 'Dashboard',
+  'page-contacts': 'Contactos',
+  'page-logs': 'Logs',
+  'page-message': 'Mensaje',
+  'page-zones': 'Mis Zonas',
+  'page-setup': 'Configuracion',
+};
+
+function navTo(e, pageId) {
+  e.preventDefault();
+  document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
+  e.currentTarget.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+  document.getElementById(pageId).style.display = 'block';
+  document.getElementById('pageTitle').textContent = pageTitles[pageId] || 'Dashboard';
+  document.querySelector('.main').scrollTop = 0;
+  if (pageId === 'page-contacts') setFilter(currentFilter);
+}
+
+function renderZoneSection() {
+  const badges = document.getElementById('zoneBadges');
+  const countLabel = document.getElementById('zoneCountLabel');
+  const emptyState = document.getElementById('zonesEmpty');
+  if (!userZones || userZones.length === 0) {
+    badges.innerHTML = '';
+    countLabel.textContent = '0/' + userMaxZones + ' zonas';
+    emptyState.style.display = 'block';
+    document.getElementById('btnChangeZones').style.display = 'none';
+    return;
+  }
+  emptyState.style.display = 'none';
+  countLabel.textContent = userZones.length + '/' + userMaxZones + ' zonas';
+  badges.innerHTML = userZones.map(z => `<span class="zone-badge">${esc(z.label || z.name)}<button class="zone-badge-remove" onclick="removeZone('${esc(z.name)}')" title="Eliminar zona">&times;</button></span>`).join('');
+  // Show change button only if user has fewer zones than max
+  document.getElementById('btnChangeZones').style.display = userZones.length < userMaxZones ? 'inline-block' : 'none';
+}
+
+async function removeZone(name) {
+  if (!confirm('Eliminar esta zona? Otra persona podra reservarla.')) return;
+  // Delete from zone_licenses
+  await sb.from('zone_licenses').delete()
+    .eq('zone_name', name)
+    .eq('user_id', currentUser.id);
+  // Update configs.zones
+  userZones = userZones.filter(z => z.name !== name);
+  await sb.from('configs')
+    .update({ zones: userZones })
+    .eq('user_id', currentUser.id);
+  renderZoneSection();
+}
+
+async function openZoneSelector() {
+  const overlay = document.getElementById('zoneOverlay');
+  overlay.style.display = 'flex';
+  document.getElementById('zoneError').style.display = 'none';
+  selectedZones.clear();
+
+  // Pre-select already assigned zones
+  userZones.forEach(z => selectedZones.add(z.name));
+
+  // Init map if not yet created
+  if (!zoneMap) {
+    zoneMap = L.map('zoneMap', { zoomControl: true }).setView([39.62, 2.95], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap',
+      maxZoom: 16
+    }).addTo(zoneMap);
+  }
+
+  // Fix map display in modal
+  setTimeout(() => zoneMap.invalidateSize(), 150);
+
+  // Load taken zones
+  const { data: licenses } = await sb.from('zone_licenses').select('zone_name, user_id');
+  takenZones.clear();
+  if (licenses) {
+    licenses.forEach(l => {
+      if (l.user_id !== currentUser.id) takenZones.add(l.zone_name);
+    });
+  }
+
+  // Load GeoJSON and render
+  try {
+    const resp = await fetch('/zones-mallorca.geojson');
+    const geojson = await resp.json();
+    // Remove old layers
+    Object.values(zoneLayers).forEach(l => zoneMap.removeLayer(l));
+    zoneLayers = {};
+    geojson.features.forEach(feature => {
+      const name = feature.properties.name;
+      const layer = L.geoJSON(feature, {
+        style: () => getZoneStyle(name),
+        onEachFeature: (f, lyr) => {
+          lyr.on('click', () => onZoneClick(name));
+          lyr.bindTooltip(f.properties.label, { sticky: true, className: 'zone-tooltip' });
+        }
+      }).addTo(zoneMap);
+      zoneLayers[name] = layer;
+    });
+  } catch (e) {
+    console.error('Failed to load zones GeoJSON', e);
+  }
+
+  updateZoneCounter();
+}
+
+function getZoneStyle(name) {
+  if (takenZones.has(name)) {
+    return { color: '#dc2626', fillColor: '#fca5a5', fillOpacity: 0.5, weight: 2 };
+  }
+  if (selectedZones.has(name)) {
+    return { color: '#2563eb', fillColor: '#93c5fd', fillOpacity: 0.55, weight: 2.5 };
+  }
+  return { color: '#059669', fillColor: '#6ee7b7', fillOpacity: 0.35, weight: 1.5 };
+}
+
+function onZoneClick(name) {
+  if (takenZones.has(name)) return;
+  if (selectedZones.has(name)) {
+    selectedZones.delete(name);
+  } else {
+    if (selectedZones.size >= userMaxZones) return;
+    selectedZones.add(name);
+  }
+  restyleAllZones();
+  updateZoneCounter();
+}
+
+function restyleAllZones() {
+  Object.entries(zoneLayers).forEach(([name, layer]) => {
+    layer.setStyle(getZoneStyle(name));
+  });
+}
+
+function updateZoneCounter() {
+  document.getElementById('zoneSelCounter').textContent = selectedZones.size + '/' + userMaxZones + ' zonas';
+  const btn = document.getElementById('btnConfirmZones');
+  const existingNames = new Set(userZones.map(z => z.name));
+  const added = [...selectedZones].filter(z => !existingNames.has(z));
+  const removed = [...existingNames].filter(z => !selectedZones.has(z));
+  btn.disabled = added.length === 0 && removed.length === 0;
+}
+
+async function confirmZones() {
+  const btn = document.getElementById('btnConfirmZones');
+  const errEl = document.getElementById('zoneError');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+  errEl.style.display = 'none';
+
+  try {
+    // Determine added and removed zones
+    const existingNames = new Set(userZones.map(z => z.name));
+    const newZoneNames = [...selectedZones].filter(n => !existingNames.has(n));
+    const removedZoneNames = [...existingNames].filter(n => !selectedZones.has(n));
+
+    // Delete removed zone_licenses
+    for (const zoneName of removedZoneNames) {
+      await sb.from('zone_licenses').delete()
+        .eq('zone_name', zoneName)
+        .eq('user_id', currentUser.id);
+    }
+
+    // Insert new zone_licenses
+    for (const zoneName of newZoneNames) {
+      const { error } = await sb.from('zone_licenses').insert({
+        zone_name: zoneName,
+        user_id: currentUser.id
+      });
+      if (error) {
+        // UNIQUE violation = zone was taken by someone else
+        if (error.code === '23505') {
+          errEl.textContent = 'La zona "' + zoneName + '" acaba de ser reservada por otro usuario. Elige otra.';
+          errEl.style.display = 'block';
+          takenZones.add(zoneName);
+          selectedZones.delete(zoneName);
+          restyleAllZones();
+          updateZoneCounter();
+          btn.disabled = false;
+          btn.textContent = 'Confirmar mis zonas';
+          return;
+        }
+        throw new Error(error.message);
+      }
+    }
+
+    // Build zones array from GeoJSON metadata for all selected zones
+    let geojsonData = null;
+    try {
+      const resp = await fetch('/zones-mallorca.geojson');
+      geojsonData = await resp.json();
+    } catch (e) { /* ignore */ }
+
+    const zonesArray = [...selectedZones].map(name => {
+      const feature = geojsonData?.features.find(f => f.properties.name === name);
+      return {
+        name,
+        label: feature?.properties.label || name,
+        postal_codes: feature?.properties.postal_codes || []
+      };
+    });
+
+    // Update configs.zones
+    const { error: updateErr } = await sb.from('configs')
+      .update({ zones: zonesArray })
+      .eq('user_id', currentUser.id);
+    if (updateErr) throw new Error(updateErr.message);
+
+    // Update local state
+    userZones = zonesArray;
+
+    // Close modal
+    document.getElementById('zoneOverlay').style.display = 'none';
+    renderZoneSection();
+
+    // Only navigate to setup if coming from checkout flow
+    if (isPostCheckout) {
+      isPostCheckout = false;
+      autoGenerateSetupToken();
+    }
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Confirmar mis zonas';
+}
+
+function closeZoneSelector() {
+  document.getElementById('zoneOverlay').style.display = 'none';
+}
+
+async function autoGenerateSetupToken() {
+  try {
+    const { data: token, error } = await sb.rpc('create_setup_token');
+    if (error || !token) return;
+    document.getElementById('tokenValue').textContent = token;
+    document.getElementById('tokenDisplay').style.display = 'block';
+    // Switch to setup page
+    document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+    document.getElementById('page-setup').style.display = 'block';
+    document.getElementById('pageTitle').textContent = 'Configuracion';
+    document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
+    document.querySelector('.sidebar nav a:last-child').classList.add('active');
+  } catch (e) { /* ignore */ }
+}
+
 checkAuth();
 setInterval(refreshAll, 30000);
 
-// Handle post-checkout: auto-generate token and show install instructions
+// Handle post-checkout: zone selection or auto-generate token
 (async () => {
   const params = new URLSearchParams(window.location.search);
   if (params.get('checkout') !== 'success') return;
@@ -748,14 +1226,27 @@ setInterval(refreshAll, 30000);
   // Wait for auth to be ready
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return;
-  // Auto-generate setup token
-  const { data: token, error } = await sb.rpc('create_setup_token');
-  if (error || !token) return;
-  // Show setup section with token
-  document.getElementById('tokenValue').textContent = token;
-  document.getElementById('tokenDisplay').style.display = 'block';
-  // Scroll to setup section
-  document.getElementById('setup-section').scrollIntoView({ behavior: 'smooth' });
+  // Load config to check if zones are set
+  const { data: cfg } = await sb.from('configs')
+    .select('max_zones, zones')
+    .eq('user_id', session.user.id).single();
+  if (cfg) {
+    userMaxZones = cfg.max_zones || 1;
+    userZones = cfg.zones || [];
+  }
+  // If zones empty → show zones page and open selector
+  if (!userZones || userZones.length === 0) {
+    isPostCheckout = true;
+    setTimeout(() => {
+      document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+      document.getElementById('page-zones').style.display = 'block';
+      document.getElementById('pageTitle').textContent = 'Mis Zonas';
+      openZoneSelector();
+    }, 500);
+  } else {
+    // Zones already set → generate token directly
+    autoGenerateSetupToken();
+  }
 })();
 </script>
 </body>

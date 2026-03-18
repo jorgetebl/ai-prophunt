@@ -462,6 +462,83 @@ body {
 }
 .btn-checkout.primary:hover { opacity: 0.9; }
 
+/* ── User menu ── */
+.user-menu {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  display: none;
+  z-index: 10;
+}
+.user-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  color: #555;
+  transition: background 0.15s;
+}
+.user-menu-btn:hover { background: #eee; }
+.user-avatar {
+  width: 26px;
+  height: 26px;
+  background: #1a1a2e;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.user-email {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  min-width: 180px;
+  overflow: hidden;
+}
+.user-dropdown.open { display: block; }
+.user-dropdown-email {
+  padding: 0.75rem 1rem;
+  font-size: 0.78rem;
+  color: #888;
+  border-bottom: 1px solid #f0f0f0;
+  word-break: break-all;
+}
+.user-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: #c0392b;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.user-dropdown-item:hover { background: #fff5f5; }
+
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .page { flex-direction: column; }
@@ -488,8 +565,8 @@ body {
       <div class="brand">
         <span class="brand-name">AI PropHunt</span>
       </div>
-      <h2>Capta inmuebles de particulares mientras duermes</h2>
-      <p>Detecta propiedades en portales, extrae el contacto del vendedor y envia un WhatsApp personalizado. Todo automatico, cada dia.</p>
+      <h2>Capta inmuebles de particulares en tu zona exclusiva</h2>
+      <p>Detecta propiedades en portales, extrae el contacto del vendedor y envia un WhatsApp personalizado con IA. Solo tu en tu zona.</p>
       <div class="features-row">
         <div class="feature">
           <div class="feature-icon">&#x1F50D;</div>
@@ -508,7 +585,20 @@ body {
   </div>
 
   <!-- Right: Form panel -->
-  <div class="panel">
+  <div class="panel" style="position: relative;">
+    <!-- User menu (visible when logged in) -->
+    <div class="user-menu" id="userMenu">
+      <button class="user-menu-btn" onclick="toggleUserDropdown()">
+        <div class="user-avatar" id="userAvatar"></div>
+        <span class="user-email" id="userEmail"></span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;opacity:0.5;"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+      <div class="user-dropdown" id="userDropdown">
+        <div class="user-dropdown-email" id="userDropdownEmail"></div>
+        <button class="user-dropdown-item" onclick="handleLogout()">Cerrar sesion</button>
+      </div>
+    </div>
+
     <div class="panel-inner">
       <h1>Empieza gratis</h1>
       <p class="sub">Crea tu cuenta y conecta tu captacion en minutos</p>
@@ -564,28 +654,39 @@ body {
       <div id="planBox" class="setup-box">
         <div class="check-circle">&#x2705;</div>
         <h2>Cuenta creada</h2>
-        <p class="sub">Elige tu plan para continuar</p>
+        <p class="sub">Elige tu plan — cada zona es solo tuya</p>
 
         <div style="display: flex; flex-direction: column; gap: 1rem; text-align: left;">
-          <div style="border: 1.5px solid #e0e0e0; border-radius: 12px; padding: 1.25rem; cursor: pointer; transition: border-color 0.2s;" onclick="startCheckout('basico')" onmouseover="this.style.borderColor='#1a1a2e'" onmouseout="this.style.borderColor='#e0e0e0'">
+          <!-- Agente -->
+          <div style="border: 1.5px solid #e0e0e0; border-radius: 12px; padding: 1.25rem; cursor: pointer; transition: border-color 0.2s;" onclick="startCheckout('agente')" onmouseover="this.style.borderColor='#1a1a2e'" onmouseout="this.style.borderColor='#e0e0e0'">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-              <strong style="font-size: 1rem;">Basico</strong>
-              <span style="font-size: 1.25rem; font-weight: 700;">299€<span style="font-size: 0.8rem; font-weight: 400; color: #888;">/mes</span></span>
+              <strong style="font-size: 1rem;">Agente</strong>
+              <span style="font-size: 1.25rem; font-weight: 700;">297€<span style="font-size: 0.8rem; font-weight: 400; color: #888;">/mes</span></span>
             </div>
-            <div style="font-size: 0.82rem; color: #888;">Hasta 15 contactos/dia · 3 portales · Dashboard</div>
+            <div style="font-size: 0.82rem; color: #888;">1 zona exclusiva · Hasta 20 contactos/dia · ~10€/dia</div>
           </div>
 
-          <div style="border: 2px solid #DC0032; border-radius: 12px; padding: 1.25rem; cursor: pointer; position: relative; background: #fff5f7; transition: opacity 0.2s;" onclick="startCheckout('pro')" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+          <!-- Oficina (Popular) -->
+          <div style="border: 2px solid #DC0032; border-radius: 12px; padding: 1.25rem; cursor: pointer; position: relative; background: #fff5f7; transition: opacity 0.2s;" onclick="startCheckout('oficina')" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
             <div style="position: absolute; top: -10px; right: 12px; background: #DC0032; color: white; font-size: 0.6rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.05em;">Popular</div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-              <strong style="font-size: 1rem;">Pro</strong>
-              <span style="font-size: 1.25rem; font-weight: 700;">499€<span style="font-size: 0.8rem; font-weight: 400; color: #888;">/mes</span></span>
+              <strong style="font-size: 1rem;">Oficina</strong>
+              <span style="font-size: 1.25rem; font-weight: 700;">597€<span style="font-size: 0.8rem; font-weight: 400; color: #888;">/mes</span></span>
             </div>
-            <div style="font-size: 0.82rem; color: #888;">Hasta 50 contactos/dia · Soporte prioridad · Nuevas funciones</div>
+            <div style="font-size: 0.82rem; color: #888;">3 zonas exclusivas (199€/zona) · Hasta 40 contactos/dia</div>
+          </div>
+
+          <!-- Agencia -->
+          <div style="border: 1.5px solid #e0e0e0; border-radius: 12px; padding: 1.25rem; cursor: pointer; transition: border-color 0.2s;" onclick="startCheckout('agencia')" onmouseover="this.style.borderColor='#1a1a2e'" onmouseout="this.style.borderColor='#e0e0e0'">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <strong style="font-size: 1rem;">Agencia</strong>
+              <span style="font-size: 1.25rem; font-weight: 700;">997€<span style="font-size: 0.8rem; font-weight: 400; color: #888;">/mes</span></span>
+            </div>
+            <div style="font-size: 0.82rem; color: #888;">6 zonas exclusivas (166€/zona) · Hasta 60 contactos/dia</div>
           </div>
         </div>
 
-        <p style="font-size: 0.78rem; color: #bbb; margin-top: 1.25rem;">Sin permanencia. Cancela cuando quieras.</p>
+        <p style="font-size: 0.78rem; color: #bbb; margin-top: 1.25rem;">Sin permanencia. Solo un agente por zona. Cancela cuando quieras.</p>
       </div>
     </div>
   </div>
@@ -593,44 +694,66 @@ body {
 
 <!-- Pricing section -->
 <section class="pricing-section" id="pricing">
-  <h2>Planes simples y transparentes</h2>
-  <p class="pricing-sub">Sin permanencia. Cancela cuando quieras.</p>
+  <h2>Tu zona, solo tuya</h2>
+  <p class="pricing-sub">Exclusividad geografica: solo un agente por zona. Sin permanencia.</p>
 
-  <div class="pricing-cards">
-    <!-- Básico -->
+  <div class="pricing-cards" style="max-width: 1100px;">
+    <!-- Agente -->
     <div class="pricing-card">
-      <div class="plan-name">Basico</div>
-      <div class="price">299€ <span>/mes</span></div>
-      <div class="plan-desc">Para empezar a captar</div>
+      <div class="plan-name">Agente</div>
+      <div class="price">297€ <span>/mes</span></div>
+      <div class="plan-desc">~10€/dia · 1 zona exclusiva</div>
       <ul>
-        <li>Hasta 15 contactos por dia</li>
-        <li>Dashboard en tiempo real</li>
+        <li>1 zona geografica en exclusiva</li>
+        <li>Hasta 20 contactos por dia</li>
         <li>Mensajes WhatsApp con IA generativa</li>
         <li>Idealista, Fotocasa, Pisos.com</li>
+        <li>Dashboard en tiempo real</li>
         <li>Soporte por email</li>
       </ul>
-      <button class="btn-checkout outline" onclick="startCheckout('basico')">
-        Empezar con Basico
+      <button class="btn-checkout outline" onclick="startCheckout('agente')">
+        Reservar mi zona
       </button>
     </div>
 
-    <!-- Pro -->
+    <!-- Oficina -->
     <div class="pricing-card popular">
       <div class="popular-badge">Mas popular</div>
-      <div class="plan-name">Pro</div>
-      <div class="price">499€ <span>/mes</span></div>
-      <div class="plan-desc">Para maxima captacion</div>
+      <div class="plan-name">Oficina</div>
+      <div class="price">597€ <span>/mes</span></div>
+      <div class="plan-desc">199€/zona · 3 zonas exclusivas</div>
       <ul>
-        <li>Hasta 50 contactos por dia</li>
-        <li>Todo lo del plan Basico</li>
+        <li>3 zonas geograficas en exclusiva</li>
+        <li>Hasta 40 contactos por dia</li>
+        <li>Todo lo del plan Agente</li>
         <li>Prioridad en soporte</li>
         <li>Acceso anticipado a nuevas funciones</li>
       </ul>
-      <button class="btn-checkout primary" onclick="startCheckout('pro')">
-        Empezar con Pro
+      <button class="btn-checkout primary" onclick="startCheckout('oficina')">
+        Reservar mis zonas
+      </button>
+    </div>
+
+    <!-- Agencia -->
+    <div class="pricing-card">
+      <div class="plan-name">Agencia</div>
+      <div class="price">997€ <span>/mes</span></div>
+      <div class="plan-desc">166€/zona · 6 zonas exclusivas</div>
+      <ul>
+        <li>6 zonas geograficas en exclusiva</li>
+        <li>Hasta 60 contactos por dia</li>
+        <li>Todo lo del plan Oficina</li>
+        <li>Soporte prioritario dedicado</li>
+      </ul>
+      <button class="btn-checkout outline" onclick="startCheckout('agencia')">
+        Reservar mis zonas
       </button>
     </div>
   </div>
+
+  <p style="color: rgba(255,255,255,0.35); font-size: 0.85rem; margin-top: 2.5rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+    Solo un agente por zona. Reserva la tuya antes de que otro se adelante.
+  </p>
 </section>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -686,7 +809,8 @@ async function handleRegister(e) {
     const { data, error } = await sb.auth.signUp({ email, password });
     if (error) throw new Error(error.message);
     if (data.user) {
-      await sb.from('configs').insert({ user_id: data.user.id, max_contacts_per_day: 15, min_delay_minutes: 2 });
+      await sb.from('configs').insert({ user_id: data.user.id, max_contacts_per_day: 15, min_delay_minutes: 2, max_zones: 1, zones: [] });
+      showUserMenu(data.user.email);
       // Show plan selection instead of setup
       document.getElementById('registerForm').style.display = 'none';
       document.getElementById('loginForm').style.display = 'none';
@@ -718,6 +842,7 @@ async function handleLogin(e) {
       showSuccess('Login correcto. Redirigiendo...');
       setTimeout(() => { window.location.href = 'dashboard.html'; }, 1000);
     } else {
+      showUserMenu(data.user.email);
       // No subscription — show plan selection
       document.getElementById('registerForm').style.display = 'none';
       document.getElementById('loginForm').style.display = 'none';
@@ -748,9 +873,35 @@ function copyInstallCmd() {
   });
 }
 
+function showUserMenu(email) {
+  const menu = document.getElementById('userMenu');
+  const initials = email.substring(0, 2).toUpperCase();
+  document.getElementById('userAvatar').textContent = initials;
+  document.getElementById('userEmail').textContent = email;
+  document.getElementById('userDropdownEmail').textContent = email;
+  menu.style.display = 'block';
+}
+
+function toggleUserDropdown() {
+  document.getElementById('userDropdown').classList.toggle('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.user-menu')) {
+    document.getElementById('userDropdown').classList.remove('open');
+  }
+});
+
+async function handleLogout() {
+  await sb.auth.signOut();
+  window.location.reload();
+}
+
 (async () => {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return;
+  showUserMenu(session.user.email);
   // Check if user has active subscription before redirecting
   const { data: sub } = await sb.from('subscriptions')
     .select('status')

@@ -415,7 +415,15 @@ async function handleStripeWebhook(req, res) {
   if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
     const sub = event.data.object;
     const customerId = sub.customer;
-    const plan = sub.items?.data?.[0]?.price?.id === process.env.STRIPE_PRICE_PRO ? 'pro' : 'basico';
+    const priceId = sub.items?.data?.[0]?.price?.id;
+    const PRICE_TO_PLAN = {
+      [process.env.STRIPE_PRICE_PRO]: 'pro',
+      [process.env.STRIPE_PRICE_BASICO]: 'basico',
+      [process.env.STRIPE_PRICE_AGENTE]: 'agente',
+      [process.env.STRIPE_PRICE_OFICINA]: 'oficina',
+      [process.env.STRIPE_PRICE_AGENCIA]: 'agencia',
+    };
+    const plan = PRICE_TO_PLAN[priceId] || 'basico';
 
     if (sbConfigured()) {
       try {

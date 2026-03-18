@@ -3,8 +3,13 @@ import { createClient } from '@supabase/supabase-js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const PRICES = {
+  // Legacy (keep for existing subscribers)
   basico: process.env.STRIPE_PRICE_BASICO,
   pro: process.env.STRIPE_PRICE_PRO,
+  // New zone-exclusivity plans
+  agente: process.env.STRIPE_PRICE_AGENTE,
+  oficina: process.env.STRIPE_PRICE_OFICINA,
+  agencia: process.env.STRIPE_PRICE_AGENCIA,
 };
 
 const supabase = createClient(

@@ -31,7 +31,23 @@ export default async (req) => {
   if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
     const sub = event.data.object;
     const customerId = sub.customer;
-    const plan = sub.items?.data?.[0]?.price?.id === process.env.STRIPE_PRICE_PRO ? 'pro' : 'basico';
+    // Map price ID to plan name
+    const priceId = sub.items?.data?.[0]?.price?.id;
+    const PRICE_TO_PLAN = {
+      [process.env.STRIPE_PRICE_PRO]: 'pro',
+      [process.env.STRIPE_PRICE_BASICO]: 'basico',
+      [process.env.STRIPE_PRICE_AGENTE]: 'agente',
+      [process.env.STRIPE_PRICE_OFICINA]: 'oficina',
+      [process.env.STRIPE_PRICE_AGENCIA]: 'agencia',
+    };
+    const PLAN_LIMITS = {
+      basico:  { maxContacts: 15, maxZones: 1 },
+      pro:     { maxContacts: 50, maxZones: 1 },
+      agente:  { maxContacts: 20, maxZones: 1 },
+      oficina: { maxContacts: 40, maxZones: 3 },
+      agencia: { maxContacts: 60, maxZones: 6 },
+    };
+    const plan = PRICE_TO_PLAN[priceId] || 'basico';
 
     // Find user by customer ID (may already exist) or via checkout metadata
     let userId = null;
@@ -60,13 +76,13 @@ export default async (req) => {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'stripe_subscription_id' });
 
-      // Update max_contacts_per_day based on plan
-      const maxContacts = plan === 'pro' ? 50 : 15;
+      // Update configs based on plan limits
+      const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.basico;
       await supabase.from('configs')
-        .update({ max_contacts_per_day: maxContacts })
+        .update({ max_contacts_per_day: limits.maxContacts, max_zones: limits.maxZones })
         .eq('user_id', userId);
 
-      console.log(`Subscription upserted: ${userId} → ${plan} (${maxContacts} contacts/day)`);
+      console.log(`Subscription upserted: ${userId} → ${plan} (${limits.maxContacts} contacts/day, ${limits.maxZones} zones)`);
     } else {
       console.warn(`No user found for Stripe customer ${customerId}`);
     }
