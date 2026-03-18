@@ -244,11 +244,26 @@ fi
 case "${1:-help}" in
   start)
     echo "Iniciando AI PropHunt..."
-    cd "$INSTALL_DIR" && ./run.sh "${2:-server}"
+    PLIST="$HOME/Library/LaunchAgents/com.prophunt.server.plist"
+    if [[ -f "$PLIST" ]]; then
+      launchctl unload "$PLIST" 2>/dev/null
+      launchctl load "$PLIST" 2>/dev/null
+      sleep 1
+      if pgrep -f "run.sh.*server\|prophunt-server\|server.bundle.cjs" >/dev/null 2>&1; then
+        echo "Servidor arrancado"
+      else
+        echo "Error al arrancar. Revisa: cat $INSTALL_DIR/data/logs/server.log"
+      fi
+    else
+      cd "$INSTALL_DIR" && ./run.sh "${2:-server}" &
+      echo "Servidor arrancado (PID: $!)"
+    fi
     ;;
   stop)
     echo "Parando AI PropHunt..."
-    pkill -f "prophunt-server\|server.bundle.cjs" 2>/dev/null && echo "Parado" || echo "No estaba corriendo"
+    PLIST="$HOME/Library/LaunchAgents/com.prophunt.server.plist"
+    launchctl unload "$PLIST" 2>/dev/null
+    pkill -f "prophunt-server\|server.bundle.cjs\|run.sh.*server" 2>/dev/null && echo "Parado" || echo "No estaba corriendo"
     ;;
   status)
     if pgrep -f "prophunt-server\|server.bundle.cjs" >/dev/null 2>&1; then
@@ -329,13 +344,18 @@ EOF
     echo "    - $INSTALL_DIR (todos los archivos)"
     echo "    - /usr/local/bin/prophunt (comando CLI)"
     echo "    - $HOME/.prophunt (configuracion)"
+    echo "    - Autoarranque (LaunchAgent)"
     echo ""
     read -p "  Estas seguro? (escribe 'si' para confirmar): " CONFIRM
     if [[ "$CONFIRM" != "si" ]]; then echo "Cancelado"; exit 0; fi
     echo ""
+    echo "  Parando servidor..."
+    launchctl unload "$HOME/Library/LaunchAgents/com.prophunt.server.plist" 2>/dev/null
+    pkill -f "prophunt-server\|server.bundle.cjs" 2>/dev/null
     echo "  Eliminando archivos..."
     rm -rf "$INSTALL_DIR"
     rm -rf "$HOME/.prophunt"
+    rm -f "$HOME/Library/LaunchAgents/com.prophunt.server.plist"
     sudo rm -f /usr/local/bin/prophunt 2>/dev/null || rm -f /usr/local/bin/prophunt 2>/dev/null
     echo "  AI PropHunt desinstalado"
     echo ""
@@ -396,6 +416,56 @@ if curl -sfI "$MENUBAR_URL" >/dev/null 2>&1; then
   fi
 fi
 
+# ── 7. Autoarranque al encender el Mac ──
+echo ""
+echo "Configurando autoarranque..."
+PLIST_NAME="com.prophunt.server"
+PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_NAME.plist"
+mkdir -p "$HOME/Library/LaunchAgents"
+
+# Determinar ruta del ejecutable
+if [[ -f "$INSTALL_DIR/prophunt-server" ]]; then
+  SERVER_CMD="$INSTALL_DIR/prophunt-server"
+else
+  SERVER_CMD="/usr/bin/env node $INSTALL_DIR/server.bundle.cjs"
+fi
+
+cat > "$PLIST_PATH" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$PLIST_NAME</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$INSTALL_DIR/run.sh</string>
+    <string>server</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>$INSTALL_DIR</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>$INSTALL_DIR/data/logs/server.log</string>
+  <key>StandardErrorPath</key>
+  <string>$INSTALL_DIR/data/logs/server.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
+PLISTEOF
+
+# Cargar el LaunchAgent (para ahora y futuros reinicios)
+launchctl unload "$PLIST_PATH" 2>/dev/null
+launchctl load "$PLIST_PATH" 2>/dev/null
+echo "  Servidor configurado para arrancar automaticamente"
+
 # ── Vincular WhatsApp ──
 echo ""
 echo "Vinculando WhatsApp..."
@@ -426,15 +496,18 @@ fi
 echo ""
 echo "  Directorio: $INSTALL_DIR"
 echo ""
+echo "  El servidor arranca automaticamente (incluso al reiniciar)."
+echo ""
 echo "  Comandos disponibles:"
 echo "    prophunt start       Iniciar el servidor"
+echo "    prophunt stop        Parar el servidor"
 echo "    prophunt status      Ver estado"
 echo "    prophunt dashboard   Abrir panel web"
 echo "    prophunt logs        Ver logs de hoy"
 echo "    prophunt update      Actualizar"
 echo "    prophunt uninstall   Desinstalar"
 echo ""
-echo "  Ultimo paso — carga la extension en Chrome:"
+echo "  Carga la extension en Chrome:"
 echo "    1. Abre Chrome -> chrome://extensions"
 echo "    2. Activa 'Modo desarrollador' (arriba derecha)"
 echo "    3. Pulsa 'Cargar descomprimida'"
