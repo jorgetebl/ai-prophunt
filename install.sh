@@ -85,8 +85,8 @@ mkdir -p "$INSTALL_DIR/data/logs"
 # Descargar servidor (bundle + launcher)
 echo "       Descargando servidor..."
 BUNDLE_OK=true
-curl -sL "$RELEASES_URL/server.bundle.cjs" -o "$INSTALL_DIR/server.bundle.cjs" || BUNDLE_OK=false
-curl -sL "$RELEASES_URL/prophunt-server" -o "$INSTALL_DIR/prophunt-server" || BUNDLE_OK=false
+curl -sfL "$RELEASES_URL/server.bundle.cjs" -o "$INSTALL_DIR/server.bundle.cjs" || BUNDLE_OK=false
+curl -sfL "$RELEASES_URL/prophunt-server" -o "$INSTALL_DIR/prophunt-server" || BUNDLE_OK=false
 if [[ "$BUNDLE_OK" == "true" ]]; then
   chmod +x "$INSTALL_DIR/prophunt-server"
   echo "       Servidor OK"
@@ -99,32 +99,33 @@ fi
 EXT_ZIP="/tmp/prophunt-ext.zip"
 EXT_DIR="$INSTALL_DIR/chrome-extension"
 echo "       Descargando extensión Chrome..."
-if curl -sL "$RELEASES_URL/chrome-extension.zip" -o "$EXT_ZIP"; then
+if curl -sfL "$RELEASES_URL/chrome-extension.zip" -o "$EXT_ZIP" && unzip -tq "$EXT_ZIP" >/dev/null 2>&1; then
   mkdir -p "$EXT_DIR"
   unzip -q -o "$EXT_ZIP" -d "$EXT_DIR"
   rm -f "$EXT_ZIP"
   echo "       Extensión OK"
 else
+  rm -f "$EXT_ZIP"
   echo "       ERROR: No se pudo descargar la extensión"
   ERRORS+=("Extensión Chrome")
 fi
 
 # Descargar config de ejemplo si no existe
 if [[ ! -f "$INSTALL_DIR/config.json" ]]; then
-  curl -sL "https://raw.githubusercontent.com/$REPO/main/config.example.json" \
+  curl -sfL "https://raw.githubusercontent.com/$REPO/main/config.example.json" \
     -o "$INSTALL_DIR/config.json" 2>/dev/null || true
 fi
 
 # Descargar templates
 mkdir -p "$INSTALL_DIR/templates"
-curl -sL "https://raw.githubusercontent.com/$REPO/main/templates/whatsapp.txt" \
+curl -sfL "https://raw.githubusercontent.com/$REPO/main/templates/whatsapp.txt" \
   -o "$INSTALL_DIR/templates/whatsapp.txt" 2>/dev/null || true
 
 # Datos iniciales
 [[ ! -f "$INSTALL_DIR/data/contacted.json" ]] && echo '{"contacts":[]}' > "$INSTALL_DIR/data/contacted.json"
 
 # Descargar run.sh
-curl -sL "https://raw.githubusercontent.com/$REPO/main/run.sh" \
+curl -sfL "https://raw.githubusercontent.com/$REPO/main/run.sh" \
   -o "$INSTALL_DIR/run.sh" 2>/dev/null && chmod +x "$INSTALL_DIR/run.sh" || true
 
 # ── 5. Vincular cuenta ──
