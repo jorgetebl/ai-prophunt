@@ -446,14 +446,14 @@ fi
 
 NODE_DIR="$(dirname "$NODE_BIN")"
 
-# Determinar qué archivo de servidor usar
-if [[ -f "$INSTALL_DIR/server.bundle.cjs" ]]; then
-  SERVER_FILE="server.bundle.cjs"
-elif [[ -f "$INSTALL_DIR/src/server.js" ]]; then
-  SERVER_FILE="src/server.js"
-else
-  SERVER_FILE="server.bundle.cjs"
-fi
+# Crear script wrapper que hace cd + ejecuta node (evita problemas de cwd con LaunchAgent)
+cat > "$INSTALL_DIR/start-server.sh" <<WRAPEOF
+#!/bin/bash
+cd "$INSTALL_DIR"
+export PATH="$NODE_DIR:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+exec "$NODE_BIN" "$INSTALL_DIR/server.bundle.cjs"
+WRAPEOF
+chmod +x "$INSTALL_DIR/start-server.sh"
 
 cat > "$PLIST_PATH" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -464,8 +464,7 @@ cat > "$PLIST_PATH" <<PLISTEOF
   <string>$PLIST_NAME</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$NODE_BIN</string>
-    <string>$INSTALL_DIR/$SERVER_FILE</string>
+    <string>$INSTALL_DIR/start-server.sh</string>
   </array>
   <key>WorkingDirectory</key>
   <string>$INSTALL_DIR</string>
