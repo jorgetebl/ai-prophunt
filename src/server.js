@@ -11,13 +11,18 @@ import { createQueue } from './queue.js';
 import { isConfigured, getUserId, getContacts, getLogs as sbGetLogs, getConfig as sbGetConfig, init as initSupabase } from './supabase.js';
 import { parseEmail, extractPhone, buildMessage as claudeBuildMessage, setAccessToken } from './claude.js';
 
-const CONFIG_PATH = join(import.meta.dirname, '..', 'config.json');
+// Support both dev (src/server.js → ../config.json) and bundled (server.bundle.cjs → ./config.json)
+const CONFIG_PATH = existsSync(join(import.meta.dirname, '..', 'config.json'))
+  ? join(import.meta.dirname, '..', 'config.json')
+  : join(process.cwd(), 'config.json');
 const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
 
 const dryRun = process.argv.includes('--dry-run');
 const dashboardMode = process.argv.includes('--dashboard');
 const PORT = config.server?.port || Number(process.env.BRIDGE_PORT) || 3456;
-const PROJECT_ROOT = join(import.meta.dirname, '..');
+const PROJECT_ROOT = existsSync(join(import.meta.dirname, '..', 'config.json'))
+  ? join(import.meta.dirname, '..')
+  : process.cwd();
 const PUBLIC_DIR = join(PROJECT_ROOT, 'public');
 const prefixes = config.filters?.valid_phone_prefixes || ['6', '7'];
 const maxPerDay = config.filters?.max_contacts_per_day ?? 15;
