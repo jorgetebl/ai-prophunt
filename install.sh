@@ -423,6 +423,38 @@ else
   SERVER_CMD="/usr/bin/env node $INSTALL_DIR/server.bundle.cjs"
 fi
 
+# Encontrar la ruta absoluta de node
+NODE_BIN="$(which node 2>/dev/null || echo "")"
+if [[ -z "$NODE_BIN" ]]; then
+  # Buscar en ubicaciones comunes
+  for candidate in /opt/homebrew/bin/node /usr/local/bin/node "$HOME/.nvm/versions/node"/*/bin/node; do
+    if [[ -x "$candidate" ]]; then
+      NODE_BIN="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$NODE_BIN" ]]; then
+  echo "  ERROR: No se encuentra node. Instala Node.js primero."
+  ERRORS+=("Node.js no encontrado para LaunchAgent")
+else
+  echo "  Node encontrado: $NODE_BIN"
+  # Guardar ruta de node para que run.sh la use
+  echo "$NODE_BIN" > "$HOME/.prophunt/node_bin"
+fi
+
+NODE_DIR="$(dirname "$NODE_BIN")"
+
+# Determinar qué archivo de servidor usar
+if [[ -f "$INSTALL_DIR/server.bundle.cjs" ]]; then
+  SERVER_FILE="server.bundle.cjs"
+elif [[ -f "$INSTALL_DIR/src/server.js" ]]; then
+  SERVER_FILE="src/server.js"
+else
+  SERVER_FILE="server.bundle.cjs"
+fi
+
 cat > "$PLIST_PATH" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -432,8 +464,8 @@ cat > "$PLIST_PATH" <<PLISTEOF
   <string>$PLIST_NAME</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$INSTALL_DIR/run.sh</string>
-    <string>server</string>
+    <string>$NODE_BIN</string>
+    <string>$INSTALL_DIR/$SERVER_FILE</string>
   </array>
   <key>WorkingDirectory</key>
   <string>$INSTALL_DIR</string>
@@ -448,7 +480,7 @@ cat > "$PLIST_PATH" <<PLISTEOF
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>$(dirname "$(which node 2>/dev/null || echo /usr/local/bin/node)"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>$NODE_DIR:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
 </dict>
 </plist>

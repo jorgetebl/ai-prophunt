@@ -4,6 +4,14 @@ set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
+# Si node no está en el PATH, usar la ruta guardada por el instalador
+if ! command -v node &>/dev/null; then
+  SAVED_NODE="$(cat "$HOME/.prophunt/node_bin" 2>/dev/null)"
+  if [[ -n "$SAVED_NODE" && -x "$SAVED_NODE" ]]; then
+    export PATH="$(dirname "$SAVED_NODE"):$PATH"
+  fi
+fi
+
 DATE=$(date +%Y-%m-%d)
 TIME=$(date +%H:%M)
 LOG="data/logs/$DATE.log"
