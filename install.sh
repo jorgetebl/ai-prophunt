@@ -59,16 +59,28 @@ else
   fi
 fi
 
-# ── 2. jq ──
-echo "[2/6] jq..."
+# ── 2. Node.js ──
+echo "[2/7] Node.js..."
+if command -v node &>/dev/null; then
+  echo "       Ya instalado ($(node --version))"
+else
+  if command -v brew &>/dev/null; then
+    brew install node || { echo "       ERROR: No se pudo instalar Node.js"; ERRORS+=("Node.js"); }
+  else
+    echo "       ERROR: Necesita Homebrew"; ERRORS+=("Node.js")
+  fi
+fi
+
+# ── 3. jq ──
+echo "[3/7] jq..."
 if command -v jq &>/dev/null; then
   echo "       Ya instalado"
 else
   command -v brew &>/dev/null && brew install jq || { echo "       ERROR"; ERRORS+=("jq"); }
 fi
 
-# ── 3. wacli ──
-echo "[3/6] wacli (WhatsApp CLI)..."
+# ── 4. wacli ──
+echo "[4/7] wacli (WhatsApp CLI)..."
 if command -v wacli &>/dev/null; then
   echo "       Ya instalado"
 else
@@ -79,8 +91,8 @@ else
   fi
 fi
 
-# ── 4. Descargar archivos ──
-echo "[4/6] Descargando AI PropHunt..."
+# ── 5. Descargar archivos ──
+echo "[5/7] Descargando AI PropHunt..."
 
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/data/logs"
@@ -138,8 +150,8 @@ curl -sfL "https://raw.githubusercontent.com/$REPO/main/templates/whatsapp.txt" 
 curl -sfL "https://raw.githubusercontent.com/$REPO/main/run.sh" \
   -o "$INSTALL_DIR/run.sh" 2>/dev/null && chmod +x "$INSTALL_DIR/run.sh" || true
 
-# ── 5. Vincular cuenta ──
-echo "[5/6] Vinculando cuenta..."
+# ── 6. Vincular cuenta ──
+echo "[6/7] Vinculando cuenta..."
 
 SKIP_SETUP=false
 if [[ -f "$INSTALL_DIR/.env" ]] && grep -q "PROPHUNT_EMAIL=.\+" "$INSTALL_DIR/.env" 2>/dev/null; then
@@ -199,8 +211,8 @@ ENVEOF
   fi
 fi
 
-# ── 6. Instalar comando prophunt ──
-echo "[6/6] Instalando comando 'prophunt'..."
+# ── 7. Instalar comando prophunt ──
+echo "[7/7] Instalando comando 'prophunt'..."
 
 # Guardar ruta de instalacion para que el comando sepa donde buscar
 mkdir -p "$HOME/.prophunt"
