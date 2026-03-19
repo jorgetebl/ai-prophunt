@@ -37,30 +37,8 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 1
 fi
 
-# ── Elegir directorio de instalacion ──
-if [[ -n "$INSTALL_DIR_ARG" ]]; then
-  INSTALL_DIR="$INSTALL_DIR_ARG"
-else
-  DEFAULT_DIR="$HOME/ai-prophunt"
-  echo "  Donde quieres instalar AI PropHunt?"
-  echo ""
-  echo "    1) $DEFAULT_DIR  (por defecto)"
-  echo "    2) $HOME/Documents/ai-prophunt"
-  echo "    3) Otra ubicacion"
-  echo ""
-  read -p "  Elige [1/2/3]: " DIR_CHOICE < /dev/tty
-  case "$DIR_CHOICE" in
-    2) INSTALL_DIR="$HOME/Documents/ai-prophunt" ;;
-    3)
-      read -p "  Ruta completa: " CUSTOM_DIR < /dev/tty
-      # Expand ~ if used
-      INSTALL_DIR="${CUSTOM_DIR/#\~/$HOME}"
-      ;;
-    *) INSTALL_DIR="$DEFAULT_DIR" ;;
-  esac
-fi
-
-echo ""
+# ── Directorio de instalacion (fijo en ~/ai-prophunt para evitar problemas de permisos) ──
+INSTALL_DIR="${INSTALL_DIR_ARG:-$HOME/ai-prophunt}"
 echo "  Instalando en: $INSTALL_DIR"
 echo ""
 
