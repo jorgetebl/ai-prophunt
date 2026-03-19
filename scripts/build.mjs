@@ -26,22 +26,18 @@ mkdirSync(DIST, { recursive: true });
 // '../config.json' resolves to project root. In the CJS bundle, __dirname
 // IS the project root, so we need '../' to still resolve to project root.
 // Solution: define import.meta.dirname as __dirname+"/src" via banner.
-const BANNER = 'var __bundled_src_dir = require("path").join(__dirname, "src");';
+const CJS_BANNER = 'var __bundled_src_dir = require("path").join(__dirname, "src");';
+const ESM_BANNER = 'import { join as __join } from "path"; import { fileURLToPath as __toPath } from "url"; import { dirname as __dirn } from "path"; var __bundled_src_dir = __join(__dirn(__toPath(import.meta.url)), "src");';
 
-function buildBundle(entry, outfile, step, total) {
-  console.log(`Step ${step}/${total} — Bundling ${entry}...`);
-  execSync(
-    `npx esbuild ${entry} --bundle --platform=node --target=node20 --format=cjs --outfile=${outfile} --define:"import.meta.dirname"=__bundled_src_dir --define:"import.meta.filename"=__filename --banner:js='${BANNER}' --log-level=warning`,
-    { cwd: ROOT, stdio: 'inherit' }
-  );
-}
-
-buildBundle('src/server.js', 'dist/server.bundle.cjs', 1, 4);
-// index.js imports auth.js/search.js which have top-level await in CLI blocks.
-// Use ESM format to support top-level await, then wrap in a CJS launcher.
-console.log('Step 2/4 — Bundling API search...');
+console.log('Step 1/4 — Bundling server (CJS)...');
 execSync(
-  `npx esbuild src/index.js --bundle --platform=node --target=node20 --format=esm --outfile=dist/search.bundle.mjs --define:"import.meta.dirname"=__bundled_src_dir --define:"import.meta.filename"=__filename --banner:js='${BANNER}' --log-level=warning`,
+  `npx esbuild src/server.js --bundle --platform=node --target=node20 --format=cjs --outfile=dist/server.bundle.cjs --define:"import.meta.dirname"=__bundled_src_dir --define:"import.meta.filename"=__filename --banner:js='${CJS_BANNER}' --log-level=warning`,
+  { cwd: ROOT, stdio: 'inherit' }
+);
+
+console.log('Step 2/4 — Bundling API search (ESM)...');
+execSync(
+  `npx esbuild src/index.js --bundle --platform=node --target=node20 --format=esm --outfile=dist/search.bundle.mjs --define:"import.meta.dirname"=__bundled_src_dir --banner:js='${ESM_BANNER}' --log-level=warning`,
   { cwd: ROOT, stdio: 'inherit' }
 );
 
