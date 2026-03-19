@@ -233,6 +233,9 @@ cat > /tmp/prophunt-cli <<'CLIFEOF'
 #!/bin/bash
 
 # AI PropHunt — CLI
+# Fix getcwd errors if current dir was deleted
+cd "$HOME" 2>/dev/null || true
+
 INSTALL_DIR="$(cat "$HOME/.prophunt/install_dir" 2>/dev/null)"
 
 if [[ -z "$INSTALL_DIR" ]] || [[ ! -d "$INSTALL_DIR" ]]; then
