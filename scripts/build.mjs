@@ -35,9 +35,9 @@ execSync(
   { cwd: ROOT, stdio: 'inherit' }
 );
 
-console.log('Step 2/4 — Bundling API search (ESM)...');
+console.log('Step 2/4 — Bundling API search (CJS)...');
 execSync(
-  `npx esbuild src/index.js --bundle --platform=node --target=node20 --format=esm --outfile=dist/search.bundle.mjs --define:"import.meta.dirname"=__bundled_src_dir --banner:js='${ESM_BANNER}' --log-level=warning`,
+  `npx esbuild src/index.js --bundle --platform=node --target=node20 --format=cjs --outfile=dist/search.bundle.cjs --define:"import.meta.dirname"=__bundled_src_dir --define:"import.meta.filename"=__filename --banner:js='${CJS_BANNER}' --log-level=warning`,
   { cwd: ROOT, stdio: 'inherit' }
 );
 

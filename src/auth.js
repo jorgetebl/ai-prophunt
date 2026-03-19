@@ -47,14 +47,16 @@ export async function getToken() {
 
 // Allow running standalone: node src/auth.js
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { config } = await import('dotenv');
-  config();
-  try {
-    const token = await getToken();
-    console.log('Token obtained successfully');
-    console.log(`Token (first 20 chars): ${token.substring(0, 20)}...`);
-  } catch (err) {
-    console.error('Error:', err.message);
-    process.exit(1);
-  }
+  (async () => {
+    const { config } = await import('dotenv');
+    config();
+    try {
+      const token = await getToken();
+      console.log('Token obtained successfully');
+      console.log(`Token (first 20 chars): ${token.substring(0, 20)}...`);
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
+  })();
 }

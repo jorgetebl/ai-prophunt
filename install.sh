@@ -105,7 +105,7 @@ mkdir -p "$INSTALL_DIR/data/logs"
 
 # Server bundle + API search bundle
 curl -sfL "$RELEASES_URL/server.bundle.cjs" -o "$INSTALL_DIR/server.bundle.cjs"
-curl -sfL "$RELEASES_URL/search.bundle.mjs" -o "$INSTALL_DIR/search.bundle.mjs"
+curl -sfL "$RELEASES_URL/search.bundle.cjs" -o "$INSTALL_DIR/search.bundle.cjs"
 if [[ -s "$INSTALL_DIR/server.bundle.cjs" ]]; then
   echo "       Servidor OK"
 else
@@ -325,7 +325,7 @@ EOF
     REPO="jorgetebl/ai-prophunt"
     RELEASES_URL="https://github.com/$REPO/releases/download/latest"
     curl -sfL "$RELEASES_URL/server.bundle.cjs" -o "$INSTALL_DIR/server.bundle.cjs" && echo "Servidor actualizado" || echo "ERROR servidor"
-    curl -sfL "$RELEASES_URL/search.bundle.mjs" -o "$INSTALL_DIR/search.bundle.mjs" && echo "API search actualizado" || echo "ERROR API search"
+    curl -sfL "$RELEASES_URL/search.bundle.cjs" -o "$INSTALL_DIR/search.bundle.cjs" && echo "API search actualizado" || echo "ERROR API search"
     EXT_ZIP="/tmp/prophunt-ext.zip"
     if curl -sfL "$RELEASES_URL/chrome-extension.zip" -o "$EXT_ZIP" && [[ -s "$EXT_ZIP" ]]; then
       unzip -q -o "$EXT_ZIP" -d "$INSTALL_DIR/chrome-extension"; rm -f "$EXT_ZIP"; echo "Extension actualizada"

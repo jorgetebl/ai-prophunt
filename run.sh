@@ -395,8 +395,8 @@ elif [[ "$MODE" == "api" ]]; then
   echo "Buscando inmuebles via API..." | tee -a "$LOG"
   if [[ -f "$DIR/src/index.js" ]]; then
     node src/index.js 2>&1 | tee -a "$LOG"
-  elif [[ -f "$DIR/search.bundle.mjs" ]]; then
-    node search.bundle.mjs 2>&1 | tee -a "$LOG"
+  elif [[ -f "$DIR/search.bundle.cjs" ]]; then
+    node search.bundle.cjs 2>&1 | tee -a "$LOG"
   else
     echo "ERROR: No se encuentra el modulo de busqueda" | tee -a "$LOG"
     exit 1

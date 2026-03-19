@@ -137,23 +137,24 @@ export async function searchProperties(token, config) {
 
 // Allow running standalone: node src/search.js
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { config: loadEnv } = await import('dotenv');
-  loadEnv();
-  const { getToken } = await import('./auth.js');
-  const config = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'config.json'), 'utf-8'));
-
-  try {
-    const token = await getToken();
-    const result = await searchProperties(token, config);
-    console.log(`\nFound ${result.elements.length} properties (${result.requestsUsed} requests used)`);
-    for (const el of result.elements.slice(0, 5)) {
-      console.log(`  - ${el.address} | ${el.price}€ | agency=${el.agency} | ${el.url}`);
+  (async () => {
+    const { config: loadEnv } = await import('dotenv');
+    loadEnv();
+    const { getToken } = await import('./auth.js');
+    const config = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'config.json'), 'utf-8'));
+    try {
+      const token = await getToken();
+      const result = await searchProperties(token, config);
+      console.log(`\nFound ${result.elements.length} properties (${result.requestsUsed} requests used)`);
+      for (const el of result.elements.slice(0, 5)) {
+        console.log(`  - ${el.address} | ${el.price}€ | agency=${el.agency} | ${el.url}`);
+      }
+      if (result.elements.length > 5) {
+        console.log(`  ... and ${result.elements.length - 5} more`);
+      }
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
     }
-    if (result.elements.length > 5) {
-      console.log(`  ... and ${result.elements.length - 5} more`);
-    }
-  } catch (err) {
-    console.error('Error:', err.message);
-    process.exit(1);
-  }
+  })();
 }
