@@ -12,13 +12,24 @@ mkdir -p data/logs
 echo "ai-prophunt — $DATE $TIME" | tee -a "$LOG"
 
 # ─────────────────────────────────────────────
+# Detectar entorno: desarrollo (src/) vs instalado (server.bundle.cjs)
+# ─────────────────────────────────────────────
+if [[ -f "$DIR/src/server.js" ]]; then
+  SERVER_CMD="$SERVER_CMD"
+elif [[ -f "$DIR/server.bundle.cjs" ]]; then
+  SERVER_CMD="node server.bundle.cjs"
+else
+  echo "ERROR: No se encuentra el servidor (ni src/server.js ni server.bundle.cjs)" | tee -a "$LOG"
+  exit 1
+fi
+
+# ─────────────────────────────────────────────
 # Auto-update desde repo remoto (si hay)
 # ─────────────────────────────────────────────
-if [[ "${PROPHUNT_NO_UPDATE:-}" != "1" ]]; then
+if [[ "${PROPHUNT_NO_UPDATE:-}" != "1" && -f "$DIR/scripts/update.sh" ]]; then
   bash "$DIR/scripts/update.sh" || UPDATE_EXIT=$?
   UPDATE_EXIT=${UPDATE_EXIT:-0}
   if [[ "$UPDATE_EXIT" -eq 42 ]]; then
-    # run.sh fue actualizado, re-ejecutar con la nueva version
     echo "Re-ejecutando con version actualizada..." | tee -a "$LOG"
     PROPHUNT_NO_UPDATE=1 exec "$DIR/run.sh" "$@"
   fi
@@ -65,7 +76,7 @@ if [[ "$MODE" == "dashboard" ]]; then
   # Open browser after a short delay
   (sleep 1 && open "http://localhost:$SERVER_PORT") &
 
-  node src/server.js --dashboard $DRY_RUN_FLAG 2>&1 | tee -a "$LOG"
+  $SERVER_CMD --dashboard $DRY_RUN_FLAG 2>&1 | tee -a "$LOG"
   exit 0
 fi
 
@@ -245,7 +256,7 @@ PROMPT_EOF
   SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
 
   # Launch server in background for test
-  node src/server.js &
+  $SERVER_CMD &
   TEST_SERVER_PID=$!
   sleep 3
 
@@ -374,7 +385,12 @@ elif [[ "$MODE" == "api" ]]; then
 
   # Paso 1: Node.js busca en la API, filtra y genera data/pending.json
   echo "Buscando inmuebles via API..." | tee -a "$LOG"
-  node src/index.js 2>&1 | tee -a "$LOG"
+  if [[ -f "$DIR/src/index.js" ]]; then
+    node src/index.js 2>&1 | tee -a "$LOG"
+  else
+    echo "Modo API no disponible en entorno instalado (requiere src/index.js)" | tee -a "$LOG"
+    exit 1
+  fi
 
   # Verificar que hay inmuebles pendientes
   PENDING_COUNT=$(jq '.properties | length' data/pending.json 2>/dev/null || echo 0)
@@ -388,7 +404,7 @@ elif [[ "$MODE" == "api" ]]; then
 
   # Paso 2: Lanzar servidor HTTP puente en background
   SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
-  node src/server.js $DRY_RUN_FLAG &
+  $SERVER_CMD $DRY_RUN_FLAG &
   SERVER_PID=$!
   echo "Servidor puente lanzado (PID $SERVER_PID, puerto $SERVER_PORT)" | tee -a "$LOG"
 
@@ -542,7 +558,7 @@ elif [[ "$MODE" == "server" ]]; then
   SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
 
   echo "Lanzando servidor en puerto $SERVER_PORT..." | tee -a "$LOG"
-  node src/server.js $DRY_RUN_FLAG 2>&1 | tee -a "$LOG"
+  $SERVER_CMD $DRY_RUN_FLAG 2>&1 | tee -a "$LOG"
 
 # ═══════════════════════════════════════════
 #  MODO BETTERPLACE — Desatendido (Gmail → Chrome Extension → WhatsApp)
@@ -558,7 +574,7 @@ elif [[ "$MODE" == "betterplace" ]]; then
     SERVER_ALREADY_RUNNING=true
   else
     echo "Lanzando servidor Node en puerto $SERVER_PORT..." | tee -a "$LOG"
-    node src/server.js &
+    $SERVER_CMD &
     SERVER_PID=$!
     SERVER_ALREADY_RUNNING=false
 
