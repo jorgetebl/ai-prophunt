@@ -147,7 +147,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       const result = await searchProperties(token, config);
       console.log(`\nFound ${result.elements.length} properties (${result.requestsUsed} requests used)`);
       for (const el of result.elements.slice(0, 5)) {
-        console.log(`  - ${el.address} | ${el.price}€ | agency=${el.agency} | ${el.url}`);
+        console.log(`  - ${el.address} | ${el.price}€ | ref=${el.externalReference || 'none'} | ${el.url}`);
       }
       if (result.elements.length > 5) {
         console.log(`  ... and ${result.elements.length - 5} more`);
