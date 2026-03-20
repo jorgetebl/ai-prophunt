@@ -48,6 +48,8 @@ export default async (req) => {
       result = await parseEmail(payload.text);
     } else if (action === 'extract_phone') {
       result = await extractPhone(payload.domText, payload.portal, payload.afterClick);
+    } else if (action === 'extract_details') {
+      result = await extractDetails(payload.domText, payload.portal);
     } else if (action === 'build_message') {
       result = await buildMessage(payload.contact);
     } else {
@@ -170,6 +172,56 @@ ${truncated}`,
     const match = content.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
     return { found: false, noPhone: true };
+  }
+}
+
+async function extractDetails(domText, portal) {
+  const truncated = domText.slice(0, 14000);
+  const msg = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 512,
+    messages: [{
+      role: 'user',
+      content: `Extrae los datos de esta ficha de inmueble de ${portal}. Devuelve SOLO JSON:
+
+{
+  "zone": "dirección o zona (ej: Calle Suertes de la Villa 2, El Cañaveral, Madrid)",
+  "price": 350000,
+  "priceText": "350.000 €",
+  "propertyType": "piso",
+  "operation": "venta",
+  "sqm": 113,
+  "rooms": 3,
+  "bathrooms": 2,
+  "floor": "8ª planta",
+  "features": ["ascensor", "garaje", "terraza", "aire acondicionado"],
+  "ownerName": "Juan Carlos",
+  "description": "resumen de 1 frase de lo más destacado del inmueble"
+}
+
+Reglas:
+- "zone": dirección lo más completa posible (calle + barrio + ciudad)
+- "price": número sin formatear. Si es alquiler, precio mensual
+- "operation": "venta" o "alquiler"
+- "propertyType": piso, casa, ático, dúplex, estudio, chalet, local, etc.
+- "ownerName": nombre del particular si aparece (no el del usuario logueado)
+- "features": array con características destacadas (máx 6)
+- "description": 1 frase corta y concreta sobre lo más atractivo
+- Si un campo no está disponible, usa null
+- Devuelve SOLO el JSON, sin markdown
+
+TEXTO DE LA PÁGINA:
+${truncated}`,
+    }],
+  });
+
+  const content = msg.content[0].text.trim();
+  try {
+    return JSON.parse(content);
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    return {};
   }
 }
 

@@ -9,7 +9,7 @@ import { normalizePhone, isValidMobile } from './phone.js';
 import { loadContacted, getTodayContactCount } from './filter.js';
 import { createQueue } from './queue.js';
 import { isConfigured, getUserId, getContacts, getLogs as sbGetLogs, getConfig as sbGetConfig, init as initSupabase } from './supabase.js';
-import { parseEmail, extractPhone, buildMessage as claudeBuildMessage, setAccessToken } from './claude.js';
+import { parseEmail, extractPhone, extractDetails, buildMessage as claudeBuildMessage, setAccessToken } from './claude.js';
 
 const CONFIG_PATH = join(import.meta.dirname, '..', 'config.json');
 const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
@@ -294,6 +294,30 @@ async function handleBrowserDom(req, res) {
     pipeline.state = 'PROCESSING';
     json(res, 200, { ok: true });
     try {
+      // On first DOM extraction, also extract property details
+      if (state === 'DOM_PENDING' && !pipeline.currentProperty._detailsExtracted) {
+        try {
+          const details = await extractDetails(body.dom || '', pipeline.currentProperty.portal);
+          pipelineLog(`Details extracted: ${details.zone || '?'}, ${details.priceText || '?'}, ${details.propertyType || '?'}`);
+          // Merge details into current property
+          const prop = pipeline.currentProperty;
+          if (details.zone) prop.zone = details.zone;
+          if (details.price) prop.price = details.price;
+          if (details.priceText) prop.priceText = details.priceText;
+          if (details.propertyType) prop.propertyType = details.propertyType;
+          if (details.operation) prop.operation = details.operation;
+          if (details.sqm) prop.sqm = details.sqm;
+          if (details.rooms) prop.rooms = details.rooms;
+          if (details.bathrooms) prop.bathrooms = details.bathrooms;
+          if (details.floor) prop.floor = details.floor;
+          if (details.features) prop.features = details.features;
+          if (details.ownerName) prop.name = details.ownerName;
+          if (details.description) prop.detail = details.description;
+          prop._detailsExtracted = true;
+        } catch (err) {
+          pipelineLog(`extractDetails error (non-fatal): ${err.message}`);
+        }
+      }
       await processPhoneResult(body.dom || '');
     } catch (err) {
       pipelineLog(`processPhoneResult error: ${err.message}`);

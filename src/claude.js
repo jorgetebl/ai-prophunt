@@ -62,6 +62,16 @@ export async function extractPhone(domText, portal, { afterClick = false } = {})
 }
 
 /**
+ * Extract property details from DOM text.
+ * @param {string} domText - cleaned innerText of the property page
+ * @param {string} portal - 'idealista' | 'fotocasa' | 'pisos.com' etc.
+ * @returns {Promise<{zone, price, priceText, propertyType, operation, sqm, rooms, bathrooms, floor, features, ownerName, description}>}
+ */
+export async function extractDetails(domText, portal) {
+  return callProxy('extract_details', { domText, portal });
+}
+
+/**
  * Build a personalized WhatsApp message using Claude.
  * @param {Object} contact - {name, zone, portal, price, propertyType, detail}
  * @returns {Promise<string>}
