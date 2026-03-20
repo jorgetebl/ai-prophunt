@@ -307,10 +307,12 @@ PROMPT_EOF
   # Wait up to 5 min for pipeline to finish (use /pipeline/status, NOT /browser/next-task)
   for i in $(seq 1 60); do
     sleep 5
-    PIPELINE_DONE=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.done // false' 2>/dev/null)
-    PIPELINE_STATE=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.state // "unknown"' 2>/dev/null)
-    echo "  Pipeline: $PIPELINE_STATE" | tee -a "$LOG"
-    if [[ "$PIPELINE_DONE" == "true" ]]; then break; fi
+    STATUS_JSON=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" 2>/dev/null)
+    PIPELINE_DONE=$(echo "$STATUS_JSON" | jq -r '.done // false' 2>/dev/null)
+    PIPELINE_STATE=$(echo "$STATUS_JSON" | jq -r '.state // "unknown"' 2>/dev/null)
+    QUEUE_PENDING=$(echo "$STATUS_JSON" | jq -r '.queue_pending // 0' 2>/dev/null)
+    echo "  Pipeline: $PIPELINE_STATE | Cola: $QUEUE_PENDING pendientes" | tee -a "$LOG"
+    if [[ "$PIPELINE_DONE" == "true" && "$QUEUE_PENDING" == "0" ]]; then break; fi
   done
 
   # Shutdown test server

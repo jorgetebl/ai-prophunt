@@ -603,11 +603,14 @@ function handleHealth(_req, res) {
 }
 
 function handlePipelineStatus(_req, res) {
+  const queueState = queue.getState();
   json(res, 200, {
     state: pipeline.state,
     done: pipeline.state === 'DONE' || pipeline.state === 'IDLE',
     results: pipeline.results.length,
     current: pipeline.currentProperty?.url || null,
+    queue_pending: queueState.items.length,
+    queue_sent: queueState.sent,
   });
 }
 
