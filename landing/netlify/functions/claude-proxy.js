@@ -117,12 +117,21 @@ ${truncated}`,
 async function extractPhone(domText, portal) {
   const truncated = domText.slice(0, 14000);
 
-  // On Idealista, the owner's phone is ALWAYS hidden behind "Ver teléfono".
+  // On ALL portals, the owner's phone is hidden behind a button.
   // Any phone visible before clicking belongs to the logged-in user, NOT the owner.
-  // So on the first pass (before clicking), always suggest clicking "Ver teléfono".
-  const isFirstPass = !domText.includes('Teléfonos de contacto') && !domText.includes('teléfonos de contacto');
-  if (portal === 'idealista' && isFirstPass) {
-    return { found: false, action: 'click', hint: 'Ver teléfono' };
+  // First pass: always click to reveal. Second pass (after click): extract phone.
+  const revealedMarkers = ['Teléfonos de contacto', 'teléfonos de contacto', 'Teléfono del anunciante', 'teléfono:', 'Tel:'];
+  const isPhoneRevealed = revealedMarkers.some(m => domText.includes(m));
+  if (!isPhoneRevealed) {
+    const hints = {
+      idealista: 'Ver teléfono',
+      fotocasa: 'Ver teléfono',
+      'pisos.com': 'Ver teléfono',
+      milanuncios: 'Ver teléfono',
+      habitaclia: 'Ver teléfono',
+      yaencontre: 'Ver teléfono',
+    };
+    return { found: false, action: 'click', hint: hints[portal] || 'Ver teléfono' };
   }
 
   const msg = await anthropic.messages.create({
