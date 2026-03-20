@@ -115,6 +115,18 @@ ${truncated}`,
 }
 
 async function extractPhone(domText, portal) {
+  // First, try to find phone with regex before calling Claude
+  const phoneRegex = /\b(6\d[\d\s]{7,10}|7\d[\d\s]{7,10})\b/g;
+  const matches = domText.match(phoneRegex);
+  if (matches) {
+    for (const m of matches) {
+      const cleaned = m.replace(/\s/g, '');
+      if (cleaned.length >= 9 && cleaned.length <= 12 && /^[67]/.test(cleaned)) {
+        return { found: true, phone: cleaned };
+      }
+    }
+  }
+
   const truncated = domText.slice(0, 14000);
   const msg = await anthropic.messages.create({
     model: MODEL,
@@ -125,13 +137,17 @@ async function extractPhone(domText, portal) {
 
 Analiza este texto de la página y responde con JSON:
 
-Si encuentras un número de teléfono visible:
+PRIORIDAD 1 — Busca un número de teléfono móvil español (empieza por 6 o 7, tiene 9 dígitos).
+Puede aparecer con espacios: "612 34 56 78" o junto: "612345678".
+Si lo encuentras:
 {"found": true, "phone": "612345678"}
 
-Si hay un botón que hay que pulsar para ver el teléfono (p.ej. "Ver teléfono", "Mostrar teléfono", "Contactar"):
-{"found": false, "action": "click", "hint": "texto exacto del botón"}
+PRIORIDAD 2 — Si NO hay teléfono visible, busca un botón para revelarlo.
+En idealista el botón se llama "Ver teléfono" (NO "Pregunta al anunciante", eso es el formulario de contacto).
+En fotocasa: "Ver teléfono". En pisos.com: "Ver teléfono" o "Llamar".
+{"found": false, "action": "click", "hint": "Ver teléfono"}
 
-Si no hay teléfono ni botón de contacto:
+PRIORIDAD 3 — Si no hay teléfono ni botón:
 {"found": false, "noPhone": true}
 
 Devuelve SOLO el JSON, sin markdown.
