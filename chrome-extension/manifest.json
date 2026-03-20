@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "tabs",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.idealista.com/*",

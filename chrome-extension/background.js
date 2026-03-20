@@ -1,17 +1,29 @@
 const SERVER = 'http://localhost:3456';
-const POLL_INTERVAL_MS = 2000;
 
 let activeTabId = null;
+let polling = false;
 
-// ── Polling loop ──────────────────────────────────────────────────────────────
+// ── Polling via chrome.alarms (survives MV3 service worker suspension) ───────
+
+chrome.alarms.create('poll', { periodInMinutes: 0.05 }); // ~3 seconds
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'poll') poll();
+});
+
+// Also poll on startup and when woken up
+chrome.runtime.onStartup.addListener(() => poll());
+chrome.runtime.onInstalled.addListener(() => poll());
 
 async function poll() {
+  if (polling) return; // prevent overlapping polls
+  polling = true;
   try {
     const res = await fetch(`${SERVER}/browser/next-task`);
-    if (!res.ok) return;
+    if (!res.ok) { polling = false; return; }
     const task = await res.json();
 
-    if (task.type === 'idle') return;
+    if (task.type === 'idle') { polling = false; return; }
 
     if (task.type === 'navigate') {
       await doNavigate(task.url, task.taskId);
@@ -23,9 +35,8 @@ async function poll() {
   } catch {
     // Server not running yet — silently ignore
   }
+  polling = false;
 }
-
-setInterval(poll, POLL_INTERVAL_MS);
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
