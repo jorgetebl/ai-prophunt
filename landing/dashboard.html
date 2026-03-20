@@ -625,10 +625,11 @@ tr:hover td { background: #f9fafb; }
                 <th>Portal</th>
                 <th>Precio</th>
                 <th>Estado</th>
+                <th style="width: 40px;"></th>
               </tr>
             </thead>
             <tbody id="contactsBody">
-              <tr><td colspan="6" class="empty-msg">Cargando...</td></tr>
+              <tr><td colspan="7" class="empty-msg">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -932,24 +933,25 @@ async function loadContacts() {
   const { data: contacts, error } = await query.limit(200);
 
   if (error || !contacts || contacts.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">Sin contactos</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Sin contactos</td></tr>';
     updateCards([]); return;
   }
   updateCards(contacts);
-  const renderRows = (rows) => rows.map(c => {
+  const renderRows = (rows, showDelete = false) => rows.map(c => {
     const date = c.date_contacted ? c.date_contacted.substring(0, 16).replace('T', ' ') : '-';
     const zone = (c.zone || '-').length > 40 ? (c.zone || '').substring(0, 40) + '...' : (c.zone || '-');
     const price = c.price ? Number(c.price).toLocaleString('es-ES') + ' \u20ac' : '-';
     const status = c.status || 'unknown';
     const cls = 'status-' + status.replace(/[^a-z_]/g, '');
-    return `<tr><td>${esc(date)}</td><td>${esc(c.phone || '-')}</td><td title="${esc(c.zone || '')}">${esc(zone)}</td><td>${esc(c.portal || '-')}</td><td>${esc(price)}</td><td><span class="status ${cls}">${esc(status)}</span></td></tr>`;
+    const del = showDelete ? `<td><button onclick="deleteContact('${c.id}')" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:1.1rem;" title="Eliminar">&times;</button></td>` : '<td></td>';
+    return `<tr><td>${esc(date)}</td><td>${esc(c.phone || '-')}</td><td title="${esc(c.zone || '')}">${esc(zone)}</td><td>${esc(c.portal || '-')}</td><td>${esc(price)}</td><td><span class="status ${cls}">${esc(status)}</span></td>${del}</tr>`;
   }).join('');
-  tbody.innerHTML = renderRows(contacts);
+  tbody.innerHTML = renderRows(contacts, true);
   // Dashboard mini-table: show last 5 from today
   const today = todayStr();
   const todayContacts = contacts.filter(c => c.date_contacted && c.date_contacted.startsWith(today)).slice(0, 5);
   const dashBody = document.getElementById('dashContactsBody');
-  dashBody.innerHTML = todayContacts.length ? renderRows(todayContacts) : '<tr><td colspan="6" class="empty-msg">Sin contactos hoy</td></tr>';
+  dashBody.innerHTML = todayContacts.length ? renderRows(todayContacts) : '<tr><td colspan="7" class="empty-msg">Sin contactos hoy</td></tr>';
 }
 
 function updateCards(contacts) {
@@ -1069,6 +1071,13 @@ async function saveMessageConfig() {
   status.style.display = 'block';
   setTimeout(() => { status.style.display = 'none'; }, 3000);
   btn.disabled = false; btn.textContent = 'Guardar';
+}
+
+async function deleteContact(id) {
+  if (!confirm('Eliminar este contacto?')) return;
+  const { error } = await sb.from('contacts').delete().eq('id', id).eq('user_id', currentUser.id);
+  if (error) { alert('Error: ' + error.message); return; }
+  loadContacts();
 }
 
 // Token generation
