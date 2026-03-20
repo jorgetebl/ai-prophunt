@@ -225,7 +225,7 @@ ${truncated}`,
   }
 }
 
-const DEFAULT_TEMPLATE = `Hola{{nombre}}, soy Juanan Gomis agente inmobiliario profesional
+const DEFAULT_TEMPLATE = `Hola{{nombre}}, soy {{agente}}, {{cargo}}.
 
 He visto tu {{tipo}} en {{zona}} que tienes en {{portal}}{{precio}}. {{detalle}}
 
@@ -238,30 +238,42 @@ Si algun dia te apetece ver como lo trabajariamos y luego decides si te aporta v
 async function buildMessage(contact) {
   const template = contact.template || DEFAULT_TEMPLATE;
   const vars = contact.vars || { price: true, zone: true, detail: true };
+  const agentName = contact.agentName || 'tu agente inmobiliario';
+  const agentCompany = contact.agentCompany || '';
+  const agentRole = contact.agentRole || 'agente inmobiliario profesional';
 
-  // Build data lines based on active vars
+  // Build data lines
   const dataLines = [
     `- Nombre vendedor: ${contact.name || 'desconocido'}`,
+    `- Nombre agente: ${agentName}`,
+    `- Empresa: ${agentCompany || 'no especificada'}`,
+    `- Cargo: ${agentRole}`,
     `- Portal: ${contact.portal || 'el portal'}`,
-    `- Tipo: ${contact.propertyType || 'vivienda'}`,
+    `- Tipo de inmueble: ${contact.propertyType || 'vivienda'}`,
+    `- Operacion: ${contact.operation || 'venta'}`,
   ];
-  if (vars.zone !== false) dataLines.push(`- Zona: ${contact.zone || 'Palma de Mallorca'}`);
-  if (vars.price !== false) dataLines.push(`- Precio: ${contact.price ? Number(contact.price).toLocaleString('es-ES') + ' €' : 'desconocido'}`);
-  if (vars.detail !== false) dataLines.push(`- Detalle extra: ${contact.detail || ''}`);
+  if (vars.zone !== false) dataLines.push(`- Zona: ${contact.zone || 'desconocida'}`);
+  if (vars.price !== false) dataLines.push(`- Precio: ${contact.priceText || (contact.price ? Number(contact.price).toLocaleString('es-ES') + ' €' : 'desconocido')}`);
+  if (contact.sqm) dataLines.push(`- Metros: ${contact.sqm} m2`);
+  if (contact.rooms) dataLines.push(`- Habitaciones: ${contact.rooms}`);
+  if (contact.floor) dataLines.push(`- Planta: ${contact.floor}`);
+  if (contact.features?.length) dataLines.push(`- Caracteristicas: ${contact.features.join(', ')}`);
+  if (vars.detail !== false && contact.detail) dataLines.push(`- Detalle de la ficha: ${contact.detail}`);
 
-  // Build instructions based on active vars
+  // Build instructions
   const instructions = [
-    '- Si hay nombre: "Hola [nombre]," — si no hay nombre: "Hola,"',
+    '- Si hay nombre vendedor: "Hola [nombre]," — si no: "Hola,"',
+    '- Reemplaza {{agente}} con el nombre del agente, {{cargo}} con su cargo, {{empresa}} con su empresa',
     '- Reemplaza {{tipo}}, {{zona}}, {{portal}} con los datos reales',
     '- Manten el tono profesional pero cercano',
-    '- Devuelve SOLO el mensaje, sin comillas, sin explicaciones',
+    '- Devuelve SOLO el mensaje final, sin comillas, sin explicaciones',
   ];
-  if (vars.price !== false) instructions.push('- Si hay precio: incluye "por [precio]" — si no hay precio: omite {{precio}}');
+  if (vars.price !== false) instructions.push('- Si hay precio: incluye "por [precio]" — si no: omite {{precio}}');
   else instructions.push('- NO menciones el precio, elimina {{precio}} de la plantilla');
   if (vars.zone !== false) instructions.push('- Incluye la zona/direccion del inmueble');
-  else instructions.push('- NO menciones la zona/direccion, usa algo generico en lugar de {{zona}}');
-  if (vars.detail !== false) instructions.push('- {{detalle}}: UNA frase natural (max 20 palabras) mencionando algo concreto y positivo del inmueble');
-  else instructions.push('- NO anadaas detalle extra, elimina {{detalle}} de la plantilla');
+  else instructions.push('- NO menciones la zona, usa algo generico');
+  if (vars.detail !== false) instructions.push('- {{detalle}}: UNA frase natural (max 20 palabras) mencionando algo concreto y positivo del inmueble basado en los datos');
+  else instructions.push('- NO anadaas detalle extra, elimina {{detalle}}');
 
   const msg = await anthropic.messages.create({
     model: MODEL,

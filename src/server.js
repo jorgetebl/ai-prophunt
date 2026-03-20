@@ -176,6 +176,9 @@ async function processPhoneResult(domText) {
           userTemplate = cfg.message_template || undefined;
           userVars = cfg.message_vars || undefined;
           maxPerDay = cfg.max_contacts_per_day || 15;
+          if (cfg.agent_name) prop._agentName = cfg.agent_name;
+          if (cfg.agent_company) prop._agentCompany = cfg.agent_company;
+          if (cfg.agent_role) prop._agentRole = cfg.agent_role;
         }
         // Rate limit: check today's contact count
         const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
@@ -196,7 +199,18 @@ async function processPhoneResult(domText) {
       portal: prop.portal,
       zone: prop.zone,
       price: prop.price,
+      priceText: prop.priceText,
       name: prop.name || '',
+      propertyType: prop.propertyType,
+      operation: prop.operation,
+      sqm: prop.sqm,
+      rooms: prop.rooms,
+      floor: prop.floor,
+      features: prop.features,
+      detail: prop.detail,
+      agentName: prop._agentName,
+      agentCompany: prop._agentCompany,
+      agentRole: prop._agentRole,
       template: userTemplate,
       vars: userVars,
     };
