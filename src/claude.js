@@ -57,8 +57,8 @@ export async function parseEmail(text) {
  * @param {string} portal - 'idealista' | 'fotocasa' | 'pisos.com'
  * @returns {Promise<{found: boolean, phone?: string, action?: string, noPhone?: boolean}>}
  */
-export async function extractPhone(domText, portal) {
-  return callProxy('extract_phone', { domText, portal });
+export async function extractPhone(domText, portal, { afterClick = false } = {}) {
+  return callProxy('extract_phone', { domText, portal, afterClick });
 }
 
 /**

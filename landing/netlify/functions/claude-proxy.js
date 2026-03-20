@@ -47,7 +47,7 @@ export default async (req) => {
     if (action === 'parse_email') {
       result = await parseEmail(payload.text);
     } else if (action === 'extract_phone') {
-      result = await extractPhone(payload.domText, payload.portal);
+      result = await extractPhone(payload.domText, payload.portal, payload.afterClick);
     } else if (action === 'build_message') {
       result = await buildMessage(payload.contact);
     } else {
@@ -114,24 +114,25 @@ ${truncated}`,
   }
 }
 
-async function extractPhone(domText, portal) {
+async function extractPhone(domText, portal, afterClick = false) {
   const truncated = domText.slice(0, 14000);
 
-  // On ALL portals, the owner's phone is hidden behind a button.
+  // First pass (before clicking): always click "Ver teléfono" to reveal the owner's phone.
   // Any phone visible before clicking belongs to the logged-in user, NOT the owner.
-  // First pass: always click to reveal. Second pass (after click): extract phone.
-  const revealedMarkers = ['Teléfonos de contacto', 'teléfonos de contacto', 'Teléfono del anunciante', 'teléfono:', 'Tel:'];
-  const isPhoneRevealed = revealedMarkers.some(m => domText.includes(m));
-  if (!isPhoneRevealed) {
-    const hints = {
-      idealista: 'Ver teléfono',
-      fotocasa: 'Ver teléfono',
-      'pisos.com': 'Ver teléfono',
-      milanuncios: 'Ver teléfono',
-      habitaclia: 'Ver teléfono',
-      yaencontre: 'Ver teléfono',
-    };
-    return { found: false, action: 'click', hint: hints[portal] || 'Ver teléfono' };
+  if (!afterClick) {
+    return { found: false, action: 'click', hint: 'Ver teléfono' };
+  }
+
+  // After click: try regex first to find the revealed phone
+  const phoneRegex = /\b(6\d[\d\s]{7,10}|7\d[\d\s]{7,10})\b/g;
+  const matches = domText.match(phoneRegex);
+  if (matches) {
+    for (const m of matches) {
+      const cleaned = m.replace(/\s/g, '');
+      if (cleaned.length >= 9 && cleaned.length <= 12 && /^[67]/.test(cleaned)) {
+        return { found: true, phone: cleaned };
+      }
+    }
   }
 
   const msg = await anthropic.messages.create({

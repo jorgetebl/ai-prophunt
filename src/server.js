@@ -143,7 +143,8 @@ function startNextProperty() {
 
 async function processPhoneResult(domText) {
   const prop = pipeline.currentProperty;
-  const result = await extractPhone(domText, prop.portal);
+  const afterClick = pipeline.clickAttempts > 0;
+  const result = await extractPhone(domText, prop.portal, { afterClick });
 
   if (result.found && result.phone) {
     const realPhone = normalizePhone(result.phone);
