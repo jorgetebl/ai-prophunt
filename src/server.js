@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
 import { readFileSync, existsSync, appendFileSync, writeFileSync } from 'node:fs';
 import { join, extname } from 'node:path';
-import { execSync, spawn } from 'node:child_process';
+import { execSync, execFile, spawn } from 'node:child_process';
 import { log } from './logger.js';
 import { normalizePhone, isValidMobile } from './phone.js';
 import { loadContacted, getTodayContactCount } from './filter.js';
@@ -1000,6 +1000,17 @@ function nextMinute(hhmm) {
   return `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`;
 }
 
+const NOTIFY_PHONE = '34619458478';
+
+function sendNotification(message) {
+  return new Promise((resolve) => {
+    execFile('wacli', ['send', 'text', '--to', NOTIFY_PHONE, '--message', message], (err) => {
+      if (err) log(`Scheduler: notification failed — ${err.message}`);
+      resolve();
+    });
+  });
+}
+
 async function runDailyApiSearch() {
   try {
     // Step 1: Run the search (spawns index.js / search.bundle.cjs)
@@ -1008,10 +1019,13 @@ async function runDailyApiSearch() {
       : 'node search.bundle.cjs';
 
     log('Scheduler: running API search...');
+    await sendNotification(`Buenos días, acabo de arrancar la búsqueda de hoy. Voy a revisar los inmuebles nuevos en Idealista y contactar a los particulares que encuentre. Te aviso cuando termine 👍`);
+
     try {
       execSync(searchCmd, { cwd: PROJECT_ROOT, timeout: 120000, stdio: 'pipe' });
     } catch (err) {
       log(`Scheduler: search failed — ${err.message}`);
+      await sendNotification(`Ha habido un problema con la búsqueda de hoy, no he podido conectar con Idealista. Lo reviso y lo intento mañana.`);
       return;
     }
 
@@ -1097,9 +1111,19 @@ async function runDailyApiSearch() {
       }
     }
 
-    log(`Scheduler: daily run complete — ${queue.getState().sent} WhatsApps sent`);
+    const sent = queue.getState().sent;
+    const total = properties.length;
+    const phonesFound = properties.length - (pipeline.results || []).filter(r => r.status === 'failed_no_phone').length;
+    log(`Scheduler: daily run complete — ${sent} WhatsApps sent`);
+
+    if (sent > 0) {
+      await sendNotification(`Ya he terminado la ronda de hoy. He revisado ${total} inmuebles, he conseguido ${sent} teléfonos de particulares y les he escrito a todos. Mañana vuelvo a buscar, cualquier cosa me dices.`);
+    } else {
+      await sendNotification(`He terminado de revisar los ${total} inmuebles de hoy pero no he conseguido extraer teléfonos nuevos. A veces Idealista lo pone difícil. Mañana lo vuelvo a intentar.`);
+    }
   } catch (err) {
     log(`Scheduler: error — ${err.message}`);
+    await sendNotification(`Ha habido un error durante la búsqueda de hoy. Lo reviso y mañana lo intento de nuevo.`).catch(() => {});
   }
 }
 
