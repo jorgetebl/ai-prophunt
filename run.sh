@@ -463,76 +463,123 @@ elif [[ "$MODE" == "api" ]]; then
     exit 0
   fi
 
-  echo "$PENDING_COUNT inmuebles pendientes. Lanzando Claude Code..." | tee -a "$LOG"
+  echo "$PENDING_COUNT inmuebles pendientes. Procesando via servidor + extension Chrome..." | tee -a "$LOG"
 
   # Paso 2: Lanzar servidor HTTP puente en background
   SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
-  $SERVER_CMD $DRY_RUN_FLAG &
-  SERVER_PID=$!
-  echo "Servidor puente lanzado (PID $SERVER_PID, puerto $SERVER_PORT)" | tee -a "$LOG"
 
-  # Esperar a que el servidor esté listo
-  for i in $(seq 1 10); do
-    if curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
-      echo "Servidor listo en puerto $SERVER_PORT" | tee -a "$LOG"
-      break
+  # Comprobar si el servidor ya está corriendo
+  if curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
+    echo "Servidor ya en ejecución en puerto $SERVER_PORT" | tee -a "$LOG"
+    SERVER_ALREADY_RUNNING=true
+    SERVER_PID=""
+  else
+    $SERVER_CMD $DRY_RUN_FLAG &
+    SERVER_PID=$!
+    SERVER_ALREADY_RUNNING=false
+    echo "Servidor puente lanzado (PID $SERVER_PID, puerto $SERVER_PORT)" | tee -a "$LOG"
+
+    # Esperar a que el servidor esté listo
+    for i in $(seq 1 10); do
+      if curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
+        echo "Servidor listo en puerto $SERVER_PORT" | tee -a "$LOG"
+        break
+      fi
+      sleep 1
+    done
+  fi
+
+  # Paso 3: Enviar cada inmueble al pipeline del servidor via /api/run-direct
+  PROCESSED=0
+  SENT=0
+  SKIPPED=0
+  FAILED=0
+
+  for i in $(seq 0 $((PENDING_COUNT - 1))); do
+    PROP_URL=$(jq -r ".properties[$i].url" data/pending.json)
+    PROP_ZONE=$(jq -r ".properties[$i].zone // \"\"" data/pending.json)
+    PROP_PRICE=$(jq -r ".properties[$i].price // 0" data/pending.json)
+    PROP_PORTAL=$(jq -r ".properties[$i].portal // \"idealista\"" data/pending.json)
+
+    PROCESSED=$((PROCESSED + 1))
+    echo "" | tee -a "$LOG"
+    echo "[$PROCESSED/$PENDING_COUNT] Procesando: $PROP_ZONE ($PROP_URL)" | tee -a "$LOG"
+
+    # Enviar al pipeline
+    RESPONSE=$(curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-direct" \
+      -H "Content-Type: application/json" \
+      -d "{\"url\": \"$PROP_URL\", \"portal\": \"$PROP_PORTAL\", \"zone\": \"$PROP_ZONE\", \"price\": $PROP_PRICE}")
+
+    RESPONSE_OK=$(echo "$RESPONSE" | jq -r '.ok // false' 2>/dev/null)
+    if [[ "$RESPONSE_OK" != "true" ]]; then
+      RESP_ERROR=$(echo "$RESPONSE" | jq -r '.error // "unknown"' 2>/dev/null)
+      echo "  ERROR al iniciar pipeline: $RESP_ERROR" | tee -a "$LOG"
+      FAILED=$((FAILED + 1))
+      continue
     fi
-    sleep 1
+
+    # Esperar a que el pipeline termine (max 3 min por inmueble)
+    for j in $(seq 1 36); do
+      sleep 5
+      STATUS_JSON=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" 2>/dev/null)
+      PIPELINE_DONE=$(echo "$STATUS_JSON" | jq -r '.done // false' 2>/dev/null)
+      PIPELINE_STATE=$(echo "$STATUS_JSON" | jq -r '.state // "unknown"' 2>/dev/null)
+
+      if [[ "$PIPELINE_DONE" == "true" ]]; then
+        break
+      fi
+
+      # Log progress every 15s
+      if [[ $((j % 3)) -eq 0 ]]; then
+        echo "  Pipeline: $PIPELINE_STATE..." | tee -a "$LOG"
+      fi
+    done
+
+    # Comprobar resultado
+    if [[ "$PIPELINE_DONE" != "true" ]]; then
+      echo "  TIMEOUT — pipeline no terminó en 3 min" | tee -a "$LOG"
+      FAILED=$((FAILED + 1))
+    else
+      echo "  Pipeline completado ($PIPELINE_STATE)" | tee -a "$LOG"
+    fi
+
+    # Esperar entre inmuebles para que la cola de WhatsApp se procese
+    QUEUE_PENDING=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_pending // 0' 2>/dev/null)
+    if [[ "$QUEUE_PENDING" -gt 0 ]]; then
+      echo "  Cola WhatsApp: $QUEUE_PENDING pendientes, esperando..." | tee -a "$LOG"
+    fi
+
+    # Pausa entre inmuebles
+    if [[ $PROCESSED -lt $PENDING_COUNT ]]; then
+      sleep 5
+    fi
   done
 
-  # Paso 3: Claude Code procesa cada inmueble con Chrome extension + wacli
-  claude --print \
-    "Lee el archivo data/pending.json que contiene $PENDING_COUNT inmuebles de particulares obtenidos de la API de Idealista.
+  # Esperar a que la cola de WhatsApp se vacíe (max 10 min)
+  echo "" | tee -a "$LOG"
+  echo "Esperando a que la cola de WhatsApp se vacíe..." | tee -a "$LOG"
+  for i in $(seq 1 120); do
+    QUEUE_PENDING=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_pending // 0' 2>/dev/null)
+    QUEUE_SENT=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_sent // 0' 2>/dev/null)
+    if [[ "$QUEUE_PENDING" -eq 0 ]]; then
+      echo "Cola vacía. Enviados: $QUEUE_SENT" | tee -a "$LOG"
+      break
+    fi
+    if [[ $((i % 12)) -eq 0 ]]; then
+      echo "  Cola: $QUEUE_PENDING pendientes, $QUEUE_SENT enviados..." | tee -a "$LOG"
+    fi
+    sleep 5
+  done
 
-$DRY_RUN_MSG
+  echo "" | tee -a "$LOG"
+  echo "Resumen: $PROCESSED procesados" | tee -a "$LOG"
 
-Para CADA inmueble en el array 'properties':
-
-1. NAVEGAR a la URL del inmueble usando la extension de Chrome
-2. VERIFICAR que es un particular:
-   - Mirar la zona de contacto/anunciante
-   - Si aparece logo de agencia, nombre de inmobiliaria, o cualquier indicador profesional → SKIP, registrar como 'skipped_agency_detected'
-3. EXTRAER el telefono:
-   - Buscar y hacer click en 'Ver telefono' o boton similar
-   - Extraer el numero que aparece
-   - SOLO contactar si el numero empieza por 6 o 7 (moviles españoles)
-   - Si es fijo (empieza por 9, 8, etc.) → SKIP, registrar como 'skipped_landline'
-   - Si hay captcha o error → SKIP, registrar como 'skipped_captcha'
-4. ENVIAR WhatsApp usando wacli:
-   wacli send --to \"34XXXXXXXXX\" --message \"<mensaje>\"
-   - Usar la plantilla de templates/whatsapp.txt
-   - Reemplazar {{zona}} con la direccion del inmueble
-   - Reemplazar {{portal}} con 'idealista'
-   - Si no hay nombre del vendedor, cambiar 'Hola {{nombre}}, soy' por 'Hola, soy'
-5. REGISTRAR en data/contacted.json con formato:
-   {
-     \"phone\": \"34XXXXXXXXX\",
-     \"name\": null,
-     \"url\": \"<url del inmueble>\",
-     \"propertyCode\": \"<codigo>\",
-     \"portal\": \"idealista\",
-     \"zone\": \"<direccion>\",
-     \"price\": <precio>,
-     \"date_contacted\": \"<ISO timestamp>\",
-     \"status\": \"sent\" o \"skipped_<razon>\",
-     \"message_preview\": \"<primeros 100 chars del mensaje>\"
-   }
-
-REGLAS:
-- Esperar MINIMO 2 minutos entre cada envio de WhatsApp
-- Esperar 5-10 segundos entre cada navegacion a un inmueble
-- Maximo $SLOTS_LEFT contactos mas hoy
-- Si detectas captcha o bloqueo, PARA y pasa al siguiente
-- No reintentar mas de 3 veces por inmueble
-- Horario valido: 9:00-14:00 y 16:00-20:00 (hora Madrid)
-- Registrar TODAS las acciones en data/logs/$DATE.log con timestamp
-
-Directorio de trabajo: $DIR" 2>&1 | tee -a "$LOG"
-
-  # Paso 4: Apagar servidor puente
-  echo "Apagando servidor puente..." | tee -a "$LOG"
-  curl -s -X POST "http://127.0.0.1:$SERVER_PORT/shutdown" >/dev/null 2>&1 || true
-  wait $SERVER_PID 2>/dev/null || true
+  # Paso 4: Apagar servidor puente (solo si lo lanzamos nosotros)
+  if [[ "$SERVER_ALREADY_RUNNING" == "false" && -n "$SERVER_PID" ]]; then
+    echo "Apagando servidor puente..." | tee -a "$LOG"
+    curl -s -X POST "http://127.0.0.1:$SERVER_PORT/shutdown" >/dev/null 2>&1 || true
+    wait $SERVER_PID 2>/dev/null || true
+  fi
 
   echo "" | tee -a "$LOG"
   echo "Run API completado — $DATE $(date +%H:%M)" | tee -a "$LOG"
