@@ -32,15 +32,10 @@ async function main() {
     process.exit(0);
   }
 
-  // 2. Check daily contact limit
+  // 2. Log daily contact count (send limit enforced by server, not here)
   const maxPerDay = config.filters?.max_contacts_per_day || 15;
   const todayCount = await getTodayContactCount();
-  if (todayCount >= maxPerDay) {
-    log(`Daily limit reached (${todayCount}/${maxPerDay}), exiting`);
-    process.exit(0);
-  }
-  const slotsLeft = maxPerDay - todayCount;
-  log(`Contacts today: ${todayCount}/${maxPerDay} (${slotsLeft} slots left)`);
+  log(`Contacts today: ${todayCount}/${maxPerDay} (send limit enforced by server)`);
 
   // 3. Check API budget
   const requestsAvailable = getRequestsAvailableToday(config);
@@ -70,8 +65,8 @@ async function main() {
   // 7. Deduplicate against contacted.json
   const { unique, duplicates } = await deduplicateContacts(particulares);
 
-  // 8. Build pending list (limit to slots available today)
-  const pending = unique.slice(0, slotsLeft).map(el => ({
+  // 8. Build pending list (all non-agency, non-duplicate properties — server handles send limit)
+  const pending = unique.map(el => ({
     propertyCode: String(el.propertyCode),
     url: `https://www.idealista.com/inmueble/${el.propertyCode}/`,
     address: el.address || '',

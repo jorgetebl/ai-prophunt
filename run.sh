@@ -91,14 +91,8 @@ fi
 # Pre-checks comunes
 TODAY_COUNT=$(jq "[.contacts[] | select(.date_contacted | startswith(\"$DATE\"))] | length" data/contacted.json 2>/dev/null || echo 0)
 MAX_PER_DAY=$(jq -r '.filters.max_contacts_per_day' config.json)
-SLOTS_LEFT=$((MAX_PER_DAY - TODAY_COUNT))
 
-echo "Contactos hoy: $TODAY_COUNT / $MAX_PER_DAY" | tee -a "$LOG"
-
-if [[ "$TODAY_COUNT" -ge "$MAX_PER_DAY" ]]; then
-  echo "Limite diario alcanzado. Abortando." | tee -a "$LOG"
-  exit 0
-fi
+echo "Contactos hoy: $TODAY_COUNT / $MAX_PER_DAY (limite de envio controlado por servidor)" | tee -a "$LOG"
 
 # ═══════════════════════════════════════════
 #  MODO TEST — Ciclo completo con teléfono de prueba
