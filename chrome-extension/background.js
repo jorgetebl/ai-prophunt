@@ -42,15 +42,32 @@ async function poll() {
 
 async function doNavigate(url, taskId) {
   return new Promise((resolve) => {
-    if (activeTabId) {
-      chrome.tabs.update(activeTabId, { url }, (tab) => {
-        waitForLoad(tab ? tab.id : activeTabId, resolve, taskId);
-      });
-    } else {
+    function createNewTab() {
       chrome.tabs.create({ url, active: false }, (tab) => {
         activeTabId = tab.id;
         waitForLoad(tab.id, resolve, taskId);
       });
+    }
+
+    if (activeTabId) {
+      // Check if the tab still exists before trying to update it
+      chrome.tabs.get(activeTabId, (tab) => {
+        if (chrome.runtime.lastError || !tab) {
+          activeTabId = null;
+          createNewTab();
+        } else {
+          chrome.tabs.update(activeTabId, { url }, (updated) => {
+            if (chrome.runtime.lastError || !updated) {
+              activeTabId = null;
+              createNewTab();
+            } else {
+              waitForLoad(updated.id, resolve, taskId);
+            }
+          });
+        }
+      });
+    } else {
+      createNewTab();
     }
   });
 }
