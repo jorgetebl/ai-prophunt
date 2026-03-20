@@ -734,11 +734,7 @@ tr:hover td { background: #f9fafb; }
           <button class="btn-refresh" onclick="saveAgentConfig()" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.45rem 1.1rem; font-size: 0.85rem;">Guardar</button>
         </div>
         <div style="padding: 1.5rem;">
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-            <div>
-              <label style="font-size: 0.8rem; font-weight: 600; color: var(--gray); display: block; margin-bottom: 0.35rem;">Contactos max/dia</label>
-              <input type="number" id="cfgMaxPerDay" value="15" min="1" max="50" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem;">
-            </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div>
               <label style="font-size: 0.8rem; font-weight: 600; color: var(--gray); display: block; margin-bottom: 0.35rem;">Minutos entre envios</label>
               <input type="number" id="cfgMinDelay" value="2" min="1" max="30" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem;">
@@ -979,7 +975,7 @@ let agentConfigLoaded = false;
 async function loadAgentConfig() {
   if (!currentUser || agentConfigLoaded) return;
   const { data } = await sb.from('configs')
-    .select('agent_name, agent_company, agent_role, agent_phone, max_contacts_per_day, min_delay_minutes, schedule')
+    .select('agent_name, agent_company, agent_role, agent_phone, min_delay_minutes, schedule')
     .eq('user_id', currentUser.id)
     .single();
   if (data) {
@@ -987,7 +983,6 @@ async function loadAgentConfig() {
     document.getElementById('cfgCompany').value = data.agent_company || '';
     document.getElementById('cfgRole').value = data.agent_role || '';
     document.getElementById('cfgPhone').value = data.agent_phone || '';
-    document.getElementById('cfgMaxPerDay').value = data.max_contacts_per_day || 15;
     document.getElementById('cfgMinDelay').value = data.min_delay_minutes || 2;
     if (data.schedule) document.getElementById('cfgSchedule').value = data.schedule;
   }
@@ -1001,7 +996,6 @@ async function saveAgentConfig() {
     agent_company: document.getElementById('cfgCompany').value.trim(),
     agent_role: document.getElementById('cfgRole').value.trim(),
     agent_phone: document.getElementById('cfgPhone').value.trim(),
-    max_contacts_per_day: parseInt(document.getElementById('cfgMaxPerDay').value) || 15,
     min_delay_minutes: parseInt(document.getElementById('cfgMinDelay').value) || 2,
     schedule: document.getElementById('cfgSchedule').value,
   };
