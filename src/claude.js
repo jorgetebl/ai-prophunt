@@ -17,29 +17,39 @@ export function setAccessToken(token) {
   _accessToken = token;
 }
 
-async function callProxy(action, payload) {
+async function callProxy(action, payload, retries = 3) {
   if (!_accessToken) {
     throw new Error('No Supabase access token set. Call setAccessToken() after login.');
   }
 
-  const res = await fetch(PROXY_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${_accessToken}`,
-    },
-    body: JSON.stringify({ action, payload }),
-  });
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${_accessToken}`,
+      },
+      body: JSON.stringify({ action, payload }),
+    });
 
-  if (res.status === 401) throw new Error('Claude proxy: unauthorized — token expired?');
-  if (res.status === 403) throw new Error('Claude proxy: no active subscription');
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(`Claude proxy error: ${err.error || res.statusText}`);
+    if (res.status === 401) throw new Error('Claude proxy: unauthorized — token expired?');
+    if (res.status === 403) throw new Error('Claude proxy: no active subscription');
+
+    if (res.status === 429 && attempt < retries) {
+      const wait = Math.min(30, (attempt + 1) * 10); // 10s, 20s, 30s
+      console.log(`Claude proxy: rate limited, waiting ${wait}s (attempt ${attempt + 1}/${retries})...`);
+      await new Promise(r => setTimeout(r, wait * 1000));
+      continue;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Claude proxy error: ${res.status} ${JSON.stringify(err)}`);
+    }
+
+    const data = await res.json();
+    return data.result;
   }
-
-  const data = await res.json();
-  return data.result;
 }
 
 /**

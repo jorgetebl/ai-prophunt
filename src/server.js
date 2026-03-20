@@ -374,7 +374,17 @@ async function handleBrowserActionDone(req, res) {
   }
 
   if (state === 'CLICKING_WAITING' && body.action === 'click') {
-    if (body.ok) {
+    if (body.ok && body.dom) {
+      // Extension sent DOM along with click result — process directly
+      pipeline.state = 'PROCESSING';
+      try {
+        await processPhoneResult(body.dom);
+      } catch (err) {
+        pipelineLog(`processPhoneResult error: ${err.message}`);
+        pipeline.results.push({ ...pipeline.currentProperty, status: 'failed_error' });
+        startNextProperty();
+      }
+    } else if (body.ok) {
       pipeline.state = 'DOM_PENDING_2';
     } else {
       pipelineLog('Click failed — no phone');

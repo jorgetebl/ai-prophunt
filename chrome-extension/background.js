@@ -148,13 +148,24 @@ async function doClick(hint, taskId) {
 
     const clicked = results?.[0]?.result || false;
 
-    // Wait 2s for DOM update after click
-    await new Promise(r => setTimeout(r, 2000));
+    // Wait 4s for popup/modal to render after click
+    await new Promise(r => setTimeout(r, 4000));
 
+    // Extract DOM immediately after click so the popup content is captured
+    let dom = '';
+    try {
+      const domResults = await chrome.scripting.executeScript({
+        target: { tabId: activeTabId },
+        func: extractDomContent,
+      });
+      dom = domResults?.[0]?.result || '';
+    } catch { /* ignore */ }
+
+    // Send action-done AND the post-click DOM together
     await fetch(`${SERVER}/browser/action-done`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ taskId, action: 'click', ok: clicked }),
+      body: JSON.stringify({ taskId, action: 'click', ok: clicked, dom }),
     }).catch(() => {});
   } catch (err) {
     await fetch(`${SERVER}/browser/action-done`, {
@@ -182,16 +193,41 @@ function extractDomContent() {
 
 function clickByHint(hint) {
   const lowerHint = hint.toLowerCase();
-  const all = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"]'));
+  // Also try common phone button variations
+  const variations = [
+    lowerHint,
+    'ver teléfono', 'ver telefono', 'ver número', 'ver numero',
+    'mostrar teléfono', 'mostrar telefono',
+    'llamar', 'contactar por teléfono',
+    'show phone', 'see phone',
+  ];
 
-  const target = all.find(el => {
-    const text = (el.textContent || el.value || el.getAttribute('aria-label') || '').toLowerCase();
-    return text.includes(lowerHint);
+  // Search buttons, links, spans, divs with role=button, and any clickable-looking element
+  const selectors = 'button, a, [role="button"], input[type="button"], [class*="phone"], [class*="telefono"], [class*="contact"] button, [class*="contact"] a';
+  const all = Array.from(document.querySelectorAll(selectors));
+
+  for (const variation of variations) {
+    const target = all.find(el => {
+      const text = (el.textContent || el.value || el.getAttribute('aria-label') || '').toLowerCase().trim();
+      return text.includes(variation);
+    });
+    if (target) {
+      target.scrollIntoView({ block: 'center' });
+      target.click();
+      return true;
+    }
+  }
+
+  // Fallback: try clicking any element whose text looks like a phone reveal button
+  const fallback = all.find(el => {
+    const text = (el.textContent || '').toLowerCase();
+    return /tel[eé]fono|phone|llamar/.test(text) && !/ya has contactado/.test(text);
   });
-
-  if (target) {
-    target.click();
+  if (fallback) {
+    fallback.scrollIntoView({ block: 'center' });
+    fallback.click();
     return true;
   }
+
   return false;
 }
