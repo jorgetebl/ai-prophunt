@@ -673,6 +673,70 @@ tr:hover td { background: #f9fafb; }
             </label>
           </div>
           <div id="msgSaveStatus" style="display: none; margin-top: 1rem; padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.85rem;"></div>
+
+          <div style="margin-top: 1.5rem; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 10px; padding: 1.25rem;">
+            <p style="font-size: 0.8rem; font-weight: 600; color: var(--dark); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">Variables disponibles</p>
+            <p style="font-size: 0.8rem; color: var(--gray); margin-bottom: 0.75rem;">Usa estas variables entre llaves dobles en tu plantilla. La IA las reemplazara con los datos reales de cada inmueble.</p>
+            <table style="width: 100%; font-size: 0.82rem; border-collapse: collapse;">
+              <thead>
+                <tr style="border-bottom: 1px solid #dee2e6; text-align: left;">
+                  <th style="padding: 0.4rem 0.5rem; color: var(--dark); font-weight: 600;">Variable</th>
+                  <th style="padding: 0.4rem 0.5rem; color: var(--dark); font-weight: 600;">Origen</th>
+                  <th style="padding: 0.4rem 0.5rem; color: var(--dark); font-weight: 600;">Ejemplo</th>
+                </tr>
+              </thead>
+              <tbody style="color: #555;">
+                <tr style="border-bottom: 1px solid #f0f0f0;">
+                  <td style="padding: 0.4rem 0.5rem;"><code style="background: #e9ecef; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem;">{{nombre}}</code></td>
+                  <td style="padding: 0.4rem 0.5rem;">Del anuncio</td>
+                  <td style="padding: 0.4rem 0.5rem;">Juan Carlos</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f0f0f0;">
+                  <td style="padding: 0.4rem 0.5rem;"><code style="background: #e9ecef; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem;">{{agente}}</code></td>
+                  <td style="padding: 0.4rem 0.5rem;">Tu configuracion</td>
+                  <td style="padding: 0.4rem 0.5rem;">Maria Lopez</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f0f0f0;">
+                  <td style="padding: 0.4rem 0.5rem;"><code style="background: #e9ecef; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem;">{{empresa}}</code></td>
+                  <td style="padding: 0.4rem 0.5rem;">Tu configuracion</td>
+                  <td style="padding: 0.4rem 0.5rem;">Tu Inmobiliaria S.L.</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f0f0f0;">
+                  <td style="padding: 0.4rem 0.5rem;"><code style="background: #e9ecef; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem;">{{cargo}}</code></td>
+                  <td style="padding: 0.4rem 0.5rem;">Tu configuracion</td>
+                  <td style="padding: 0.4rem 0.5rem;">asesor inmobiliario</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f0f0f0;">
+                  <td style="padding: 0.4rem 0.5rem;"><code style="background: #e9ecef; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem;">{{tipo}}</code></td>
+                  <td style="padding: 0.4rem 0.5rem;">Del anuncio</td>
+                  <td style="padding: 0.4rem 0.5rem;">piso, casa, atico...</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f0f0f0;">
+                  <td style="padding: 0.4rem 0.5rem;"><code style="background: #e9ecef; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem;">{{zona}}</code></td>
+                  <td style="padding: 0.4rem 0.5rem;">Del anuncio</td>
+                  <td style="padding: 0.4rem 0.5rem;">Calle Gran Via 10, Madrid</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f0f0f0;">
+                  <td style="padding: 0.4rem 0.5rem;"><code style="background: #e9ecef; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem;">{{portal}}</code></td>
+                  <td style="padding: 0.4rem 0.5rem;">Automatico</td>
+                  <td style="padding: 0.4rem 0.5rem;">idealista, fotocasa...</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f0f0f0;">
+                  <td style="padding: 0.4rem 0.5rem;"><code style="background: #e9ecef; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem;">{{precio}}</code></td>
+                  <td style="padding: 0.4rem 0.5rem;">Del anuncio</td>
+                  <td style="padding: 0.4rem 0.5rem;">350.000 €, 1.200 €/mes</td>
+                </tr>
+                <tr>
+                  <td style="padding: 0.4rem 0.5rem;"><code style="background: #e9ecef; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem;">{{detalle}}</code></td>
+                  <td style="padding: 0.4rem 0.5rem;">IA genera</td>
+                  <td style="padding: 0.4rem 0.5rem;">Los 113 m2 con terraza en 8a planta tienen muy buena pinta</td>
+                </tr>
+              </tbody>
+            </table>
+            <p style="font-size: 0.78rem; color: var(--gray); margin-top: 0.75rem; font-style: italic;">
+              Si {{nombre}} no esta disponible, la IA lo omite automaticamente. Si desactivas un checkbox arriba, esa variable se ignora.
+            </p>
+          </div>
         </div>
       </div>
     </div>
