@@ -115,19 +115,16 @@ ${truncated}`,
 }
 
 async function extractPhone(domText, portal) {
-  // First, try to find phone with regex before calling Claude
-  const phoneRegex = /\b(6\d[\d\s]{7,10}|7\d[\d\s]{7,10})\b/g;
-  const matches = domText.match(phoneRegex);
-  if (matches) {
-    for (const m of matches) {
-      const cleaned = m.replace(/\s/g, '');
-      if (cleaned.length >= 9 && cleaned.length <= 12 && /^[67]/.test(cleaned)) {
-        return { found: true, phone: cleaned };
-      }
-    }
+  const truncated = domText.slice(0, 14000);
+
+  // On Idealista, the owner's phone is ALWAYS hidden behind "Ver teléfono".
+  // Any phone visible before clicking belongs to the logged-in user, NOT the owner.
+  // So on the first pass (before clicking), always suggest clicking "Ver teléfono".
+  const isFirstPass = !domText.includes('Teléfonos de contacto') && !domText.includes('teléfonos de contacto');
+  if (portal === 'idealista' && isFirstPass) {
+    return { found: false, action: 'click', hint: 'Ver teléfono' };
   }
 
-  const truncated = domText.slice(0, 14000);
   const msg = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 256,
@@ -137,17 +134,16 @@ async function extractPhone(domText, portal) {
 
 Analiza este texto de la página y responde con JSON:
 
-PRIORIDAD 1 — Busca un número de teléfono móvil español (empieza por 6 o 7, tiene 9 dígitos).
-Puede aparecer con espacios: "612 34 56 78" o junto: "612345678".
-Si lo encuentras:
+IMPORTANTE: En idealista, después de pulsar "Ver teléfono" aparece una sección "Teléfonos de contacto" con el número del PROPIETARIO. Ese es el que quieres.
+NO extraigas teléfonos que aparezcan en zonas de perfil del usuario logueado o en la cabecera.
+
+Si encuentras el teléfono del PROPIETARIO (sección de contacto, suele empezar por 6 o 7, tiene 9 dígitos):
 {"found": true, "phone": "612345678"}
 
-PRIORIDAD 2 — Si NO hay teléfono visible, busca un botón para revelarlo.
-En idealista el botón se llama "Ver teléfono" (NO "Pregunta al anunciante", eso es el formulario de contacto).
-En fotocasa: "Ver teléfono". En pisos.com: "Ver teléfono" o "Llamar".
+Si necesitas pulsar un botón para revelarlo ("Ver teléfono"):
 {"found": false, "action": "click", "hint": "Ver teléfono"}
 
-PRIORIDAD 3 — Si no hay teléfono ni botón:
+Si no hay teléfono ni botón:
 {"found": false, "noPhone": true}
 
 Devuelve SOLO el JSON, sin markdown.
