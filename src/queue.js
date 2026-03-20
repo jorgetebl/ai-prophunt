@@ -46,8 +46,8 @@ export function createQueue(config, { dryRun = false } = {}) {
     const h = madridTime.getHours();
     const m = madridTime.getMinutes();
     const t = h * 60 + m;
-    // 9:00-14:00 or 16:00-20:00
-    return (t >= 540 && t < 840) || (t >= 960 && t < 1200);
+    // 9:00-21:00
+    return (t >= 540 && t < 1260);
   }
 
   async function isDuplicate(contact) {
@@ -116,7 +116,7 @@ export function createQueue(config, { dryRun = false } = {}) {
         return;
       }
 
-      const message = buildMessage(contact);
+      const message = contact.message || buildMessage(contact);
 
       if (dryRun) {
         log(`Queue [DRY RUN]: would send to 34${contact.phone}`);
