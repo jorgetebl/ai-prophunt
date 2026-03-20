@@ -697,7 +697,66 @@ tr:hover td { background: #f9fafb; }
 
     <!-- PAGE: Configuracion -->
     <div class="page" id="page-setup" style="display:none;">
+
       <div class="section">
+        <div class="section-header">
+          <h2>Datos del agente</h2>
+          <button class="btn-refresh" onclick="saveAgentConfig()" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.45rem 1.1rem; font-size: 0.85rem;">Guardar</button>
+        </div>
+        <div style="padding: 1.5rem;">
+          <p style="font-size: 0.9rem; color: var(--gray); margin-bottom: 1.25rem;">
+            Estos datos se usan en los mensajes de WhatsApp (variable <code>{{agente}}</code>, <code>{{empresa}}</code>, <code>{{cargo}}</code>).
+          </p>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; color: var(--gray); display: block; margin-bottom: 0.35rem;">Nombre del agente</label>
+              <input type="text" id="cfgAgentName" placeholder="Juanan Gomis" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem;">
+            </div>
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; color: var(--gray); display: block; margin-bottom: 0.35rem;">Empresa</label>
+              <input type="text" id="cfgCompany" placeholder="REMAX Experience" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem;">
+            </div>
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; color: var(--gray); display: block; margin-bottom: 0.35rem;">Cargo / titulo</label>
+              <input type="text" id="cfgRole" placeholder="agente inmobiliario profesional" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem;">
+            </div>
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; color: var(--gray); display: block; margin-bottom: 0.35rem;">Telefono de contacto</label>
+              <input type="text" id="cfgPhone" placeholder="+34 612 345 678" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem;">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section" style="margin-top: 1.5rem;">
+        <div class="section-header">
+          <h2>Limites y horario</h2>
+          <button class="btn-refresh" onclick="saveAgentConfig()" style="background: var(--dark); color: white; border-color: var(--dark); padding: 0.45rem 1.1rem; font-size: 0.85rem;">Guardar</button>
+        </div>
+        <div style="padding: 1.5rem;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; color: var(--gray); display: block; margin-bottom: 0.35rem;">Contactos max/dia</label>
+              <input type="number" id="cfgMaxPerDay" value="15" min="1" max="50" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem;">
+            </div>
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; color: var(--gray); display: block; margin-bottom: 0.35rem;">Minutos entre envios</label>
+              <input type="number" id="cfgMinDelay" value="2" min="1" max="30" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem;">
+            </div>
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; color: var(--gray); display: block; margin-bottom: 0.35rem;">Horario de envio</label>
+              <select id="cfgSchedule" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem;">
+                <option value="9-21">9:00 — 21:00</option>
+                <option value="9-14,16-20">9:00 — 14:00, 16:00 — 20:00</option>
+                <option value="9-14">9:00 — 14:00</option>
+                <option value="10-20">10:00 — 20:00</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section" style="margin-top: 1.5rem;">
         <div class="section-header">
           <h2>Configuracion del Mac</h2>
         </div>
@@ -886,7 +945,7 @@ async function refreshAll() {
     }
   }
   renderZoneSection();
-  loadContacts(); loadLogs(); loadMessageConfig();
+  loadContacts(); loadLogs(); loadMessageConfig(); loadAgentConfig();
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
@@ -914,6 +973,42 @@ async function loadMessageConfig() {
   document.getElementById('varZone').checked = vars.zone !== false;
   document.getElementById('varDetail').checked = vars.detail !== false;
   msgConfigLoaded = true;
+}
+
+let agentConfigLoaded = false;
+async function loadAgentConfig() {
+  if (!currentUser || agentConfigLoaded) return;
+  const { data } = await sb.from('configs')
+    .select('agent_name, agent_company, agent_role, agent_phone, max_contacts_per_day, min_delay_minutes, schedule')
+    .eq('user_id', currentUser.id)
+    .single();
+  if (data) {
+    document.getElementById('cfgAgentName').value = data.agent_name || '';
+    document.getElementById('cfgCompany').value = data.agent_company || '';
+    document.getElementById('cfgRole').value = data.agent_role || '';
+    document.getElementById('cfgPhone').value = data.agent_phone || '';
+    document.getElementById('cfgMaxPerDay').value = data.max_contacts_per_day || 15;
+    document.getElementById('cfgMinDelay').value = data.min_delay_minutes || 2;
+    if (data.schedule) document.getElementById('cfgSchedule').value = data.schedule;
+  }
+  agentConfigLoaded = true;
+}
+
+async function saveAgentConfig() {
+  if (!currentUser) return;
+  const update = {
+    agent_name: document.getElementById('cfgAgentName').value.trim(),
+    agent_company: document.getElementById('cfgCompany').value.trim(),
+    agent_role: document.getElementById('cfgRole').value.trim(),
+    agent_phone: document.getElementById('cfgPhone').value.trim(),
+    max_contacts_per_day: parseInt(document.getElementById('cfgMaxPerDay').value) || 15,
+    min_delay_minutes: parseInt(document.getElementById('cfgMinDelay').value) || 2,
+    schedule: document.getElementById('cfgSchedule').value,
+  };
+  const { error } = await sb.from('configs')
+    .update(update)
+    .eq('user_id', currentUser.id);
+  alert(error ? 'Error: ' + error.message : 'Configuracion guardada');
 }
 
 async function saveMessageConfig() {
