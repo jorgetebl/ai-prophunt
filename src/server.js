@@ -957,7 +957,150 @@ async function start() {
 
   server.listen(PORT, '127.0.0.1', () => {
     log(`Server: listening on http://127.0.0.1:${PORT} (dry-run: ${dryRun})`);
+    startScheduler();
   });
+}
+
+// --- Daily auto-run scheduler ---
+
+let schedulerLastRunDate = null;
+
+function startScheduler() {
+  const schedule = config.schedule || {};
+  const runTime = schedule.run_time || '09:00';
+  const tz = schedule.timezone || 'Europe/Madrid';
+  const workingDays = schedule.working_days || [1, 2, 3, 4, 5];
+
+  log(`Scheduler: daily API search at ${runTime} (${tz}), days: ${workingDays.join(',')}`);
+
+  // Check every 30 seconds
+  setInterval(() => {
+    const now = new Date();
+    const madridNow = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+    const hhmm = madridNow.toTimeString().slice(0, 5); // "HH:MM"
+    const today = madridNow.toLocaleDateString('sv-SE'); // "YYYY-MM-DD"
+    const dayOfWeek = madridNow.getDay();
+
+    if (
+      hhmm >= runTime && hhmm < nextMinute(runTime) &&
+      workingDays.includes(dayOfWeek) &&
+      schedulerLastRunDate !== today &&
+      pipeline.state === 'IDLE' || pipeline.state === 'DONE'
+    ) {
+      schedulerLastRunDate = today;
+      log(`Scheduler: triggering daily API search (${today} ${hhmm})`);
+      runDailyApiSearch();
+    }
+  }, 30000);
+}
+
+function nextMinute(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  const totalMin = h * 60 + m + 2; // 2-minute window to catch it
+  return `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`;
+}
+
+async function runDailyApiSearch() {
+  try {
+    // Step 1: Run the search (spawns index.js / search.bundle.cjs)
+    const searchCmd = existsSync(join(PROJECT_ROOT, 'src', 'index.js'))
+      ? 'node src/index.js'
+      : 'node search.bundle.cjs';
+
+    log('Scheduler: running API search...');
+    try {
+      execSync(searchCmd, { cwd: PROJECT_ROOT, timeout: 120000, stdio: 'pipe' });
+    } catch (err) {
+      log(`Scheduler: search failed — ${err.message}`);
+      return;
+    }
+
+    // Step 2: Read pending.json
+    const pendingPath = join(PROJECT_ROOT, 'data', 'pending.json');
+    if (!existsSync(pendingPath)) {
+      log('Scheduler: no pending.json generated');
+      return;
+    }
+
+    const pending = JSON.parse(readFileSync(pendingPath, 'utf-8'));
+    const properties = pending.properties || [];
+    if (properties.length === 0) {
+      log('Scheduler: no properties to process');
+      return;
+    }
+
+    log(`Scheduler: ${properties.length} properties to process`);
+
+    // Step 3: Process each property via the pipeline
+    for (let i = 0; i < properties.length; i++) {
+      const prop = properties[i];
+      log(`Scheduler: [${i + 1}/${properties.length}] ${prop.zone || prop.address || prop.url}`);
+
+      // Wait for pipeline to be idle
+      let waitCount = 0;
+      while (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') {
+        await new Promise(r => setTimeout(r, 2000));
+        waitCount++;
+        if (waitCount > 90) { // 3 min timeout
+          log('Scheduler: pipeline stuck, skipping remaining');
+          return;
+        }
+      }
+
+      // Start pipeline for this property
+      pipeline = {
+        state: 'PROPERTY_NAVIGATE',
+        taskId: nextTaskId(),
+        properties: [prop],
+        currentIdx: 1,
+        currentProperty: {
+          url: prop.url,
+          portal: prop.portal || 'idealista',
+          zone: prop.zone || prop.address || '',
+          price: prop.price || null,
+          name: prop.name || '',
+        },
+        clickAttempts: 0,
+        results: [],
+        _pendingClickHint: null,
+        _phoneOverride: null,
+      };
+
+      pipelineLog(`Navigating to: ${prop.url}`);
+
+      // Wait for this property to finish (max 3 min)
+      let done = false;
+      for (let j = 0; j < 36; j++) {
+        await new Promise(r => setTimeout(r, 5000));
+        if (pipeline.state === 'DONE' || pipeline.state === 'IDLE') {
+          done = true;
+          break;
+        }
+      }
+
+      if (!done) {
+        log(`Scheduler: timeout on ${prop.url}`);
+        pipeline.state = 'DONE';
+      }
+
+      // Small pause between properties
+      await new Promise(r => setTimeout(r, 3000));
+    }
+
+    // Step 4: Wait for WhatsApp queue to drain
+    const queueState = queue.getState();
+    if (queueState.items.length > 0) {
+      log(`Scheduler: waiting for WhatsApp queue (${queueState.items.length} pending)...`);
+      for (let i = 0; i < 120; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        if (queue.getState().items.length === 0) break;
+      }
+    }
+
+    log(`Scheduler: daily run complete — ${queue.getState().sent} WhatsApps sent`);
+  } catch (err) {
+    log(`Scheduler: error — ${err.message}`);
+  }
 }
 
 // --- Graceful shutdown on signals ---
