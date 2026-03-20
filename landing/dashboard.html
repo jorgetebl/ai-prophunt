@@ -654,24 +654,9 @@ tr:hover td { background: #f9fafb; }
         </div>
         <div style="padding: 1.5rem;">
           <p style="font-size: 0.85rem; color: var(--gray); margin-bottom: 1rem;">
-            La IA usara esta plantilla como base y la personalizara para cada inmueble usando los datos activados.
+            Escribe tu mensaje usando las variables de abajo. La IA reemplazara cada variable con los datos reales del inmueble.
           </p>
           <textarea id="messageTemplate" style="width: 100%; min-height: 200px; padding: 0.85rem; border: 1.5px solid #e0e0e0; border-radius: 10px; font-family: inherit; font-size: 0.88rem; line-height: 1.55; resize: vertical; background: #fafafa;" placeholder="Escribe tu plantilla de mensaje..."></textarea>
-          <div style="margin-top: 1.25rem;">
-            <p style="font-size: 0.8rem; font-weight: 600; color: var(--dark); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">Datos que la IA incluira en el mensaje</p>
-            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
-              <input type="checkbox" id="varPrice" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
-              <span><strong>Precio</strong> — menciona el precio del inmueble</span>
-            </label>
-            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
-              <input type="checkbox" id="varZone" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
-              <span><strong>Direccion/zona</strong> — menciona la ubicacion del inmueble</span>
-            </label>
-            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.88rem; color: #444; cursor: pointer;">
-              <input type="checkbox" id="varDetail" checked style="width: 18px; height: 18px; accent-color: var(--dark);">
-              <span><strong>Detalle de la descripcion</strong> — la IA lee la ficha del inmueble y anade un comentario personalizado</span>
-            </label>
-          </div>
           <div id="msgSaveStatus" style="display: none; margin-top: 1rem; padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.85rem;"></div>
 
           <div style="margin-top: 1.5rem; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 10px; padding: 1.25rem;">
@@ -734,7 +719,7 @@ tr:hover td { background: #f9fafb; }
               </tbody>
             </table>
             <p style="font-size: 0.78rem; color: var(--gray); margin-top: 0.75rem; font-style: italic;">
-              Si {{nombre}} no esta disponible, la IA lo omite automaticamente. Si desactivas un checkbox arriba, esa variable se ignora.
+              Si {{nombre}} no esta disponible en el anuncio, la IA lo omite automaticamente. Puedes usar cualquier combinacion de variables.
             </p>
           </div>
         </div>
@@ -1024,14 +1009,10 @@ let msgConfigLoaded = false;
 async function loadMessageConfig() {
   if (!currentUser || msgConfigLoaded) return;
   const { data } = await sb.from('configs')
-    .select('message_template, message_vars')
+    .select('message_template')
     .eq('user_id', currentUser.id)
     .single();
   document.getElementById('messageTemplate').value = data?.message_template || DEFAULT_TEMPLATE;
-  const vars = data?.message_vars || { price: true, zone: true, detail: true };
-  document.getElementById('varPrice').checked = vars.price !== false;
-  document.getElementById('varZone').checked = vars.zone !== false;
-  document.getElementById('varDetail').checked = vars.detail !== false;
   msgConfigLoaded = true;
 }
 
@@ -1075,13 +1056,8 @@ async function saveMessageConfig() {
   const status = document.getElementById('msgSaveStatus');
   btn.disabled = true; btn.textContent = 'Guardando...';
   const template = document.getElementById('messageTemplate').value;
-  const vars = {
-    price: document.getElementById('varPrice').checked,
-    zone: document.getElementById('varZone').checked,
-    detail: document.getElementById('varDetail').checked,
-  };
   const { error } = await sb.from('configs')
-    .update({ message_template: template, message_vars: vars })
+    .update({ message_template: template })
     .eq('user_id', currentUser.id);
   if (error) {
     status.textContent = 'Error al guardar: ' + error.message;
