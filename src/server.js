@@ -146,20 +146,25 @@ async function processPhoneResult(domText) {
   const result = await extractPhone(domText, prop.portal);
 
   if (result.found && result.phone) {
-    const phone = normalizePhone(result.phone);
-    if (!phone || !isValidMobile(phone, prefixes)) {
+    const realPhone = normalizePhone(result.phone);
+    // If phone_override is set (test mode), use it instead of the real phone
+    const phone = pipeline._phoneOverride ? normalizePhone(pipeline._phoneOverride) : realPhone;
+    if (pipeline._phoneOverride) {
+      pipelineLog(`Phone override active: real=${realPhone}, sending to=${phone}`);
+    }
+    if (!realPhone || !isValidMobile(realPhone, prefixes)) {
       pipelineLog(`Phone invalid or landline: ${result.phone} — skip`);
       pipeline.results.push({ ...prop, status: 'skipped_landline' });
       startNextProperty();
       return;
     }
-    if (isDuplicateInContacted(phone, prop.url)) {
+    if (!pipeline._phoneOverride && isDuplicateInContacted(phone, prop.url)) {
       pipelineLog(`Phone duplicate: ${phone} — skip`);
       pipeline.results.push({ ...prop, status: 'skipped_duplicate' });
       startNextProperty();
       return;
     }
-    pipelineLog(`Phone found: ${phone} — queuing WhatsApp`);
+    pipelineLog(`Phone found: ${realPhone} — queuing WhatsApp to ${phone}`);
     // Fetch user config (template, vars, rate limit)
     let userTemplate, userVars, maxPerDay = 15;
     try {
@@ -376,6 +381,43 @@ async function handleRunBetterplace(_req, res) {
 
   pipelineLog('Pipeline started — navigating to Gmail');
   json(res, 200, { ok: true, message: 'Pipeline started' });
+}
+
+// --- Direct URL pipeline (skip Gmail, go straight to property) ---
+
+async function handleRunDirect(req, res) {
+  let body;
+  try { body = await readBody(req); } catch { return json(res, 400, { error: 'Invalid JSON' }); }
+
+  const { url, portal, zone, price, name, phone_override } = body;
+  if (!url) return json(res, 400, { error: 'url is required' });
+
+  if (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') {
+    return json(res, 409, { error: 'Pipeline already running', state: pipeline.state });
+  }
+
+  const prop = {
+    url,
+    portal: portal || 'idealista',
+    zone: zone || '',
+    price: price || null,
+    name: name || '',
+  };
+
+  pipeline = {
+    state: 'PROPERTY_NAVIGATE',
+    taskId: nextTaskId(),
+    properties: [prop],
+    currentIdx: 1,
+    currentProperty: prop,
+    clickAttempts: 0,
+    results: [],
+    _pendingClickHint: null,
+    _phoneOverride: phone_override || null,
+  };
+
+  pipelineLog(`Direct pipeline started — navigating to: ${url}`);
+  json(res, 200, { ok: true, message: 'Direct pipeline started', url });
 }
 
 // --- Stripe webhook handler ---
@@ -753,6 +795,7 @@ const routes = {
   'POST /browser/dom': handleBrowserDom,
   'POST /browser/action-done': handleBrowserActionDone,
   'POST /api/run-betterplace': handleRunBetterplace,
+  'POST /api/run-direct': handleRunDirect,
 };
 
 const server = createServer((req, res) => {

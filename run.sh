@@ -23,7 +23,7 @@ echo "ai-prophunt — $DATE $TIME" | tee -a "$LOG"
 # Detectar entorno: desarrollo (src/) vs instalado (server.bundle.cjs)
 # ─────────────────────────────────────────────
 if [[ -f "$DIR/src/server.js" ]]; then
-  SERVER_CMD="$SERVER_CMD"
+  SERVER_CMD="node src/server.js"
 elif [[ -f "$DIR/server.bundle.cjs" ]]; then
   SERVER_CMD="node server.bundle.cjs"
 else
@@ -259,17 +259,50 @@ NO envies ningun WhatsApp. Solo guarda los archivos.
 Directorio de trabajo: $DIR
 PROMPT_EOF
 
+  # Ask user: betterplace (Gmail) or direct URL?
+  echo "Como quieres probar?" | tee -a "$LOG"
+  echo "  1) BetterPlace (buscar email de Idealista en Gmail)" | tee -a "$LOG"
+  echo "  2) URL directa de un anuncio de Idealista" | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
+  read -p "Opcion (1 o 2): " TEST_OPTION
+  TEST_OPTION="${TEST_OPTION:-1}"
+
+  # Phone override for test mode
+  TEST_PHONE_OVERRIDE="${2:-34619458478}"
+  TEST_PHONE_OVERRIDE="${TEST_PHONE_OVERRIDE#+}"
+  if [[ ! "$TEST_PHONE_OVERRIDE" == 34* ]]; then
+    TEST_PHONE_OVERRIDE="34$TEST_PHONE_OVERRIDE"
+  fi
+
   echo "Lanzando servidor y pipeline de test..." | tee -a "$LOG"
 
   SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
+
+  # Kill any existing server on this port
+  lsof -ti:$SERVER_PORT 2>/dev/null | xargs kill 2>/dev/null || true
+  sleep 1
 
   # Launch server in background for test
   $SERVER_CMD &
   TEST_SERVER_PID=$!
   sleep 3
 
-  # Trigger pipeline
-  curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-betterplace" >/dev/null 2>&1
+  if [[ "$TEST_OPTION" == "2" ]]; then
+    # Direct URL mode
+    read -p "Pega la URL del anuncio de Idealista: " DIRECT_URL
+    if [[ -z "$DIRECT_URL" ]]; then
+      DIRECT_URL="https://www.idealista.com/inmueble/88686391/"
+    fi
+    echo "Navegando a: $DIRECT_URL" | tee -a "$LOG"
+    echo "Telefono de test: $TEST_PHONE_OVERRIDE" | tee -a "$LOG"
+    curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-direct" \
+      -H "Content-Type: application/json" \
+      -d "{\"url\": \"$DIRECT_URL\", \"portal\": \"idealista\", \"phone_override\": \"$TEST_PHONE_OVERRIDE\"}" | tee -a "$LOG"
+    echo "" | tee -a "$LOG"
+  else
+    # BetterPlace (Gmail) mode
+    curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-betterplace" >/dev/null 2>&1
+  fi
 
   # Wait up to 5 min for pipeline to produce a result
   for i in $(seq 1 60); do
@@ -284,94 +317,110 @@ PROMPT_EOF
 
   rm -f "$PROMPT_FILE"
 
-  # Check if Claude produced the message file
-  if [[ ! -f "$TEST_MSG_FILE" ]]; then
+  if [[ "$TEST_OPTION" == "2" ]]; then
+    # Direct URL mode — pipeline handled everything (extract phone, build message, send WhatsApp)
     echo "" | tee -a "$LOG"
-    echo "ERROR: No se pudo generar el mensaje. Revisa los logs." | tee -a "$LOG"
-    echo ""
-    echo "Pulsa Enter para cerrar"; read
-    exit 1
-  fi
-
-  # Show results to user
-  echo "" | tee -a "$LOG"
-  echo "═══════════════════════════════════════════" | tee -a "$LOG"
-  echo "  RESULTADO DEL TEST" | tee -a "$LOG"
-  echo "═══════════════════════════════════════════" | tee -a "$LOG"
-  echo "" | tee -a "$LOG"
-
-  if [[ -f "$TEST_DATA_FILE" ]]; then
-    echo "Inmueble: $(jq -r '.zone // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
-    echo "Precio:   $(jq -r '.price // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
-    echo "Portal:   $(jq -r '.portal // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
-    echo "URL:      $(jq -r '.url // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
-    PHONE_REAL=$(jq -r '.phone_real // "no extraido"' "$TEST_DATA_FILE")
-    echo "Tel real: $PHONE_REAL" | tee -a "$LOG"
-  fi
-
-  echo "" | tee -a "$LOG"
-  echo "--- Mensaje WhatsApp ---" | tee -a "$LOG"
-  cat "$TEST_MSG_FILE" | tee -a "$LOG"
-  echo "" | tee -a "$LOG"
-  echo "------------------------" | tee -a "$LOG"
-  echo ""
-
-  # Ask for phone number
-  read -p "Telefono al que enviar el test (Enter = 34629659757, 'n' = cancelar): " TEST_PHONE
-  if [[ "$TEST_PHONE" == "n" || "$TEST_PHONE" == "N" ]]; then
-    echo "Envio cancelado." | tee -a "$LOG"
-    rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
-    echo ""
-    echo "Pulsa Enter para cerrar"; read
-    exit 0
-  fi
-  TEST_PHONE="${TEST_PHONE:-34629659757}"
-  # Strip leading +
-  TEST_PHONE="${TEST_PHONE#+}"
-  # Ensure 34 prefix
-  if [[ ! "$TEST_PHONE" == 34* ]]; then
-    TEST_PHONE="34$TEST_PHONE"
-  fi
-
-  echo "" | tee -a "$LOG"
-  echo "Enviando WhatsApp a $TEST_PHONE..." | tee -a "$LOG"
-
-  MSG_CONTENT=$(cat "$TEST_MSG_FILE")
-  if wacli send text --to "$TEST_PHONE" --message "$MSG_CONTENT" 2>&1 | tee -a "$LOG"; then
-    echo "WhatsApp enviado OK" | tee -a "$LOG"
-    SEND_STATUS="test"
+    echo "═══════════════════════════════════════════" | tee -a "$LOG"
+    echo "  RESULTADO DEL TEST (URL directa)" | tee -a "$LOG"
+    echo "═══════════════════════════════════════════" | tee -a "$LOG"
+    echo "" | tee -a "$LOG"
+    echo "URL: $DIRECT_URL" | tee -a "$LOG"
+    echo "Telefono de envio: $TEST_PHONE_OVERRIDE" | tee -a "$LOG"
+    echo "" | tee -a "$LOG"
+    echo "El pipeline ha procesado el inmueble automaticamente." | tee -a "$LOG"
+    echo "Revisa el log del dia: data/logs/$DATE.log" | tee -a "$LOG"
+    echo "Y contacted.json para ver el registro." | tee -a "$LOG"
   else
-    echo "ERROR al enviar WhatsApp" | tee -a "$LOG"
-    SEND_STATUS="test_failed"
+    # BetterPlace mode — check Claude temp files
+    # Check if Claude produced the message file
+    if [[ ! -f "$TEST_MSG_FILE" ]]; then
+      echo "" | tee -a "$LOG"
+      echo "ERROR: No se pudo generar el mensaje. Revisa los logs." | tee -a "$LOG"
+      echo ""
+      echo "Pulsa Enter para cerrar"; read
+      exit 1
+    fi
+
+    # Show results to user
+    echo "" | tee -a "$LOG"
+    echo "═══════════════════════════════════════════" | tee -a "$LOG"
+    echo "  RESULTADO DEL TEST" | tee -a "$LOG"
+    echo "═══════════════════════════════════════════" | tee -a "$LOG"
+    echo "" | tee -a "$LOG"
+
+    if [[ -f "$TEST_DATA_FILE" ]]; then
+      echo "Inmueble: $(jq -r '.zone // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
+      echo "Precio:   $(jq -r '.price // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
+      echo "Portal:   $(jq -r '.portal // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
+      echo "URL:      $(jq -r '.url // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
+      PHONE_REAL=$(jq -r '.phone_real // "no extraido"' "$TEST_DATA_FILE")
+      echo "Tel real: $PHONE_REAL" | tee -a "$LOG"
+    fi
+
+    echo "" | tee -a "$LOG"
+    echo "--- Mensaje WhatsApp ---" | tee -a "$LOG"
+    cat "$TEST_MSG_FILE" | tee -a "$LOG"
+    echo "" | tee -a "$LOG"
+    echo "------------------------" | tee -a "$LOG"
+    echo ""
+
+    # Ask for phone number
+    read -p "Telefono al que enviar el test (Enter = 34629659757, 'n' = cancelar): " TEST_PHONE
+    if [[ "$TEST_PHONE" == "n" || "$TEST_PHONE" == "N" ]]; then
+      echo "Envio cancelado." | tee -a "$LOG"
+      rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
+      echo ""
+      echo "Pulsa Enter para cerrar"; read
+      exit 0
+    fi
+    TEST_PHONE="${TEST_PHONE:-34629659757}"
+    # Strip leading +
+    TEST_PHONE="${TEST_PHONE#+}"
+    # Ensure 34 prefix
+    if [[ ! "$TEST_PHONE" == 34* ]]; then
+      TEST_PHONE="34$TEST_PHONE"
+    fi
+
+    echo "" | tee -a "$LOG"
+    echo "Enviando WhatsApp a $TEST_PHONE..." | tee -a "$LOG"
+
+    MSG_CONTENT=$(cat "$TEST_MSG_FILE")
+    if wacli send text --to "$TEST_PHONE" --message "$MSG_CONTENT" 2>&1 | tee -a "$LOG"; then
+      echo "WhatsApp enviado OK" | tee -a "$LOG"
+      SEND_STATUS="test"
+    else
+      echo "ERROR al enviar WhatsApp" | tee -a "$LOG"
+      SEND_STATUS="test_failed"
+    fi
+
+    # Register in contacted.json
+    if [[ -f "$TEST_DATA_FILE" ]]; then
+      CONTACT_NAME=$(jq -r '.name // ""' "$TEST_DATA_FILE")
+      CONTACT_URL=$(jq -r '.url // ""' "$TEST_DATA_FILE")
+      CONTACT_ZONE=$(jq -r '.zone // ""' "$TEST_DATA_FILE")
+      CONTACT_PRICE=$(jq -r '.price // 0' "$TEST_DATA_FILE")
+      CONTACT_PHONE_REAL=$(jq -r '.phone_real // ""' "$TEST_DATA_FILE")
+
+      # Add to contacted.json using jq
+      TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S")
+      MSG_PREVIEW=$(head -c 100 "$TEST_MSG_FILE")
+      jq --arg phone "$TEST_PHONE" \
+         --arg name "$CONTACT_NAME" \
+         --arg url "$CONTACT_URL" \
+         --arg zone "$CONTACT_ZONE" \
+         --argjson price "$CONTACT_PRICE" \
+         --arg date "$TIMESTAMP" \
+         --arg status "$SEND_STATUS" \
+         --arg preview "$MSG_PREVIEW" \
+         --arg notes "TEST: telefono real del anuncio era $CONTACT_PHONE_REAL. Enviado a $TEST_PHONE" \
+         '.contacts += [{"phone":$phone,"name":$name,"url":$url,"portal":"idealista","zone":$zone,"price":$price,"date_contacted":$date,"status":$status,"message_preview":$preview,"notes":$notes}]' \
+         data/contacted.json > data/contacted_tmp.json && mv data/contacted_tmp.json data/contacted.json
+
+      echo "Contacto registrado en contacted.json" | tee -a "$LOG"
+    fi
+
+    rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
   fi
-
-  # Register in contacted.json
-  if [[ -f "$TEST_DATA_FILE" ]]; then
-    CONTACT_NAME=$(jq -r '.name // ""' "$TEST_DATA_FILE")
-    CONTACT_URL=$(jq -r '.url // ""' "$TEST_DATA_FILE")
-    CONTACT_ZONE=$(jq -r '.zone // ""' "$TEST_DATA_FILE")
-    CONTACT_PRICE=$(jq -r '.price // 0' "$TEST_DATA_FILE")
-    CONTACT_PHONE_REAL=$(jq -r '.phone_real // ""' "$TEST_DATA_FILE")
-
-    # Add to contacted.json using jq
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S")
-    MSG_PREVIEW=$(head -c 100 "$TEST_MSG_FILE")
-    jq --arg phone "$TEST_PHONE" \
-       --arg name "$CONTACT_NAME" \
-       --arg url "$CONTACT_URL" \
-       --arg zone "$CONTACT_ZONE" \
-       --argjson price "$CONTACT_PRICE" \
-       --arg date "$TIMESTAMP" \
-       --arg status "$SEND_STATUS" \
-       --arg preview "$MSG_PREVIEW" \
-       --arg notes "TEST: telefono real del anuncio era $CONTACT_PHONE_REAL. Enviado a $TEST_PHONE" \
-       '.contacts += [{"phone":$phone,"name":$name,"url":$url,"portal":"idealista","zone":$zone,"price":$price,"date_contacted":$date,"status":$status,"message_preview":$preview,"notes":$notes}]' \
-       data/contacted.json > data/contacted_tmp.json && mv data/contacted_tmp.json data/contacted.json
-
-    echo "Contacto registrado en contacted.json" | tee -a "$LOG"
-  fi
-
-  rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
 
   echo "" | tee -a "$LOG"
   echo "Run TEST completado — $DATE $(date +%H:%M)" | tee -a "$LOG"
