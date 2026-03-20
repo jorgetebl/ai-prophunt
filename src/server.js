@@ -602,6 +602,15 @@ function handleHealth(_req, res) {
   json(res, 200, { ok: true, dryRun, port: PORT, uptime: process.uptime() });
 }
 
+function handlePipelineStatus(_req, res) {
+  json(res, 200, {
+    state: pipeline.state,
+    done: pipeline.state === 'DONE' || pipeline.state === 'IDLE',
+    results: pipeline.results.length,
+    current: pipeline.currentProperty?.url || null,
+  });
+}
+
 function handlePause(_req, res) {
   queue.pause();
   json(res, 200, { status: 'paused' });
@@ -781,6 +790,7 @@ const routes = {
   'GET /status': handleStatus,
   'GET /queue': handleQueue,
   'GET /health': handleHealth,
+  'GET /pipeline/status': handlePipelineStatus,
   'POST /pause': handlePause,
   'POST /resume': handleResume,
   'POST /shutdown': handleShutdown,

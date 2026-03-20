@@ -304,11 +304,13 @@ PROMPT_EOF
     curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-betterplace" >/dev/null 2>&1
   fi
 
-  # Wait up to 5 min for pipeline to produce a result
+  # Wait up to 5 min for pipeline to finish (use /pipeline/status, NOT /browser/next-task)
   for i in $(seq 1 60); do
     sleep 5
-    TASK_TYPE=$(curl -s "http://127.0.0.1:$SERVER_PORT/browser/next-task" | jq -r '.type // "unknown"' 2>/dev/null)
-    if [[ "$TASK_TYPE" == "idle" ]]; then break; fi
+    PIPELINE_DONE=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.done // false' 2>/dev/null)
+    PIPELINE_STATE=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.state // "unknown"' 2>/dev/null)
+    echo "  Pipeline: $PIPELINE_STATE" | tee -a "$LOG"
+    if [[ "$PIPELINE_DONE" == "true" ]]; then break; fi
   done
 
   # Shutdown test server
