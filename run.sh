@@ -436,70 +436,99 @@ elif [[ "$MODE" == "api" ]]; then
     DRY_RUN_MSG="MODO DRY RUN: No enviar WhatsApp, solo simular."
   fi
 
-  echo "Modo: API Idealista $DRY_RUN_FLAG" | tee -a "$LOG"
+  if [[ -n "$DRY_RUN_FLAG" ]]; then
+    echo "  (modo simulacion — no se enviaran WhatsApps)" | tee -a "$LOG"
+  fi
+  echo "" | tee -a "$LOG"
 
-  # Paso 1: Node.js busca en la API, filtra y genera data/pending.json
-  echo "Buscando inmuebles via API..." | tee -a "$LOG"
+  # ── Paso 1: Buscar inmuebles en Idealista ──
+  echo "Buscando inmuebles nuevos en Idealista..." | tee -a "$LOG"
   if [[ -f "$DIR/src/index.js" ]]; then
-    node src/index.js 2>&1 | tee -a "$LOG"
+    node src/index.js >> "$LOG" 2>&1
   elif [[ -f "$DIR/search.bundle.cjs" ]]; then
-    node search.bundle.cjs 2>&1 | tee -a "$LOG"
+    node search.bundle.cjs >> "$LOG" 2>&1
   else
-    echo "ERROR: No se encuentra el modulo de busqueda" | tee -a "$LOG"
+    echo "  Error: no se encuentra el modulo de busqueda" | tee -a "$LOG"
     exit 1
   fi
 
-  # Verificar que hay inmuebles pendientes
+  # Verificar resultados
   PENDING_COUNT=$(jq '.properties | length' data/pending.json 2>/dev/null || echo 0)
+  TOTAL_FOUND=$(jq '.stats.totalFound // 0' data/pending.json 2>/dev/null || echo 0)
+  PARTICULARES=$(jq '.stats.particulares // 0' data/pending.json 2>/dev/null || echo 0)
+  DUPLICATES=$(jq '.stats.duplicates // 0' data/pending.json 2>/dev/null || echo 0)
+
+  echo "  Encontrados: $TOTAL_FOUND inmuebles en Idealista" | tee -a "$LOG"
+  if [[ "$PARTICULARES" -gt 0 ]]; then
+    echo "  Particulares: $PARTICULARES (descartadas agencias)" | tee -a "$LOG"
+  fi
+  if [[ "$DUPLICATES" -gt 0 ]]; then
+    echo "  Ya contactados: $DUPLICATES (no se repiten)" | tee -a "$LOG"
+  fi
+  echo "  Nuevos para revisar: $PENDING_COUNT" | tee -a "$LOG"
 
   if [[ "$PENDING_COUNT" -eq 0 ]]; then
-    echo "No hay inmuebles nuevos que procesar." | tee -a "$LOG"
+    echo "" | tee -a "$LOG"
+    echo "No hay inmuebles nuevos que procesar hoy." | tee -a "$LOG"
     exit 0
   fi
 
-  echo "$PENDING_COUNT inmuebles pendientes. Procesando via servidor + extension Chrome..." | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
 
-  # Paso 2: Lanzar servidor HTTP puente en background
+  # ── Paso 2: Conectar con el servidor ──
   SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
 
-  # Comprobar si el servidor ya está corriendo
   if curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
-    echo "Servidor ya en ejecución en puerto $SERVER_PORT" | tee -a "$LOG"
+    echo "Servidor conectado." | tee -a "$LOG"
     SERVER_ALREADY_RUNNING=true
     SERVER_PID=""
   else
-    $SERVER_CMD $DRY_RUN_FLAG &
+    echo "Arrancando servidor..." | tee -a "$LOG"
+    $SERVER_CMD $DRY_RUN_FLAG >> "$LOG" 2>&1 &
     SERVER_PID=$!
     SERVER_ALREADY_RUNNING=false
-    echo "Servidor puente lanzado (PID $SERVER_PID, puerto $SERVER_PORT)" | tee -a "$LOG"
 
-    # Esperar a que el servidor esté listo
     for i in $(seq 1 10); do
-      if curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
-        echo "Servidor listo en puerto $SERVER_PORT" | tee -a "$LOG"
-        break
-      fi
+      if curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then break; fi
       sleep 1
     done
+
+    if ! curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
+      echo "  Error: el servidor no arranco. Revisa los logs." | tee -a "$LOG"
+      exit 1
+    fi
+    echo "Servidor listo." | tee -a "$LOG"
   fi
 
-  # Paso 3: Enviar cada inmueble al pipeline del servidor via /api/run-direct
+  echo "" | tee -a "$LOG"
+  echo "Revisando $PENDING_COUNT inmuebles uno a uno..." | tee -a "$LOG"
+  echo "(Abro cada ficha en Chrome, busco el telefono y si es particular le escribo por WhatsApp)" | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
+
+  # ── Paso 3: Procesar cada inmueble ──
   PROCESSED=0
-  SENT=0
-  SKIPPED=0
-  FAILED=0
+  PHONES_FOUND=0
+  MESSAGES_SENT=0
+  NO_PHONE=0
+  ERRORS=0
 
   for i in $(seq 0 $((PENDING_COUNT - 1))); do
     PROP_URL=$(jq -r ".properties[$i].url" data/pending.json)
-    PROP_ZONE=$(jq -r ".properties[$i].zone // \"\"" data/pending.json)
+    PROP_ZONE=$(jq -r ".properties[$i].zone // .properties[$i].address // \"\"" data/pending.json)
     PROP_PRICE=$(jq -r ".properties[$i].price // 0" data/pending.json)
+    PROP_PRICE_FMT=$(printf "%'.0f" "$PROP_PRICE" 2>/dev/null || echo "$PROP_PRICE")
     PROP_PORTAL=$(jq -r ".properties[$i].portal // \"idealista\"" data/pending.json)
 
     PROCESSED=$((PROCESSED + 1))
-    echo "" | tee -a "$LOG"
-    echo "[$PROCESSED/$PENDING_COUNT] Procesando: $PROP_ZONE ($PROP_URL)" | tee -a "$LOG"
 
-    # Esperar a que el pipeline esté libre antes de enviar
+    # Mostrar info del inmueble
+    if [[ -n "$PROP_ZONE" && "$PROP_ZONE" != "null" ]]; then
+      echo "[$PROCESSED/$PENDING_COUNT] $PROP_ZONE — ${PROP_PRICE_FMT} €" | tee -a "$LOG"
+    else
+      echo "[$PROCESSED/$PENDING_COUNT] Inmueble en $PROP_PORTAL — ${PROP_PRICE_FMT} €" | tee -a "$LOG"
+    fi
+
+    # Esperar a que el pipeline este libre
     for w in $(seq 1 60); do
       PIPE_STATE=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.done // false' 2>/dev/null)
       if [[ "$PIPE_STATE" == "true" ]]; then break; fi
@@ -514,76 +543,107 @@ elif [[ "$MODE" == "api" ]]; then
     RESPONSE_OK=$(echo "$RESPONSE" | jq -r '.ok // false' 2>/dev/null)
     if [[ "$RESPONSE_OK" != "true" ]]; then
       RESP_ERROR=$(echo "$RESPONSE" | jq -r '.error // "unknown"' 2>/dev/null)
-      echo "  ERROR al iniciar pipeline: $RESP_ERROR" | tee -a "$LOG"
-      FAILED=$((FAILED + 1))
+      echo "  ✗ No se pudo procesar: $RESP_ERROR" | tee -a "$LOG"
+      ERRORS=$((ERRORS + 1))
       continue
     fi
 
-    # Esperar a que el pipeline termine (max 3 min por inmueble)
+    echo "  Abriendo ficha en Chrome..." | tee -a "$LOG"
+
+    # Esperar a que termine (max 3 min)
+    LAST_STATE=""
     for j in $(seq 1 36); do
       sleep 5
       STATUS_JSON=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" 2>/dev/null)
       PIPELINE_DONE=$(echo "$STATUS_JSON" | jq -r '.done // false' 2>/dev/null)
       PIPELINE_STATE=$(echo "$STATUS_JSON" | jq -r '.state // "unknown"' 2>/dev/null)
 
-      if [[ "$PIPELINE_DONE" == "true" ]]; then
-        break
+      # Mostrar progreso de forma natural
+      if [[ "$PIPELINE_STATE" != "$LAST_STATE" ]]; then
+        case "$PIPELINE_STATE" in
+          DOM_PENDING|DOM_RECEIVED|PROCESSING)
+            [[ "$LAST_STATE" != "reading" ]] && echo "  Leyendo la ficha del inmueble..." | tee -a "$LOG" && LAST_STATE="reading"
+            ;;
+          CLICKING|CLICKING_WAITING|DOM_PENDING_2)
+            [[ "$LAST_STATE" != "clicking" ]] && echo "  Buscando el telefono..." | tee -a "$LOG" && LAST_STATE="clicking"
+            ;;
+          PHONE_FOUND)
+            echo "  Telefono encontrado, preparando mensaje..." | tee -a "$LOG"
+            LAST_STATE="$PIPELINE_STATE"
+            ;;
+          DONE|IDLE)
+            break
+            ;;
+          *)
+            LAST_STATE="$PIPELINE_STATE"
+            ;;
+        esac
       fi
 
-      # Log progress every 15s
-      if [[ $((j % 3)) -eq 0 ]]; then
-        echo "  Pipeline: $PIPELINE_STATE..." | tee -a "$LOG"
-      fi
+      if [[ "$PIPELINE_DONE" == "true" ]]; then break; fi
     done
 
     # Comprobar resultado
     if [[ "$PIPELINE_DONE" != "true" ]]; then
-      echo "  TIMEOUT — pipeline no terminó en 3 min" | tee -a "$LOG"
-      FAILED=$((FAILED + 1))
-    else
-      echo "  Pipeline completado ($PIPELINE_STATE)" | tee -a "$LOG"
+      echo "  ✗ Tiempo agotado, paso al siguiente" | tee -a "$LOG"
+      ERRORS=$((ERRORS + 1))
     fi
 
-    # Esperar entre inmuebles para que la cola de WhatsApp se procese
+    # Comprobar si se envio WhatsApp
+    QUEUE_SENT_NOW=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_sent // 0' 2>/dev/null)
     QUEUE_PENDING=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_pending // 0' 2>/dev/null)
-    if [[ "$QUEUE_PENDING" -gt 0 ]]; then
-      echo "  Cola WhatsApp: $QUEUE_PENDING pendientes, esperando..." | tee -a "$LOG"
+
+    if [[ "$QUEUE_PENDING" -gt 0 || "$QUEUE_SENT_NOW" -gt "$MESSAGES_SENT" ]]; then
+      PHONES_FOUND=$((PHONES_FOUND + 1))
+      echo "  ✓ WhatsApp enviado" | tee -a "$LOG"
+      MESSAGES_SENT=$QUEUE_SENT_NOW
+    else
+      NO_PHONE=$((NO_PHONE + 1))
+      echo "  — No se encontro telefono" | tee -a "$LOG"
     fi
+
+    echo "" | tee -a "$LOG"
 
     # Pausa entre inmuebles
     if [[ $PROCESSED -lt $PENDING_COUNT ]]; then
+      sleep 3
+    fi
+  done
+
+  # ── Paso 4: Esperar a que se envien todos los WhatsApps pendientes ──
+  QUEUE_PENDING=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_pending // 0' 2>/dev/null)
+  if [[ "$QUEUE_PENDING" -gt 0 ]]; then
+    echo "Enviando los ultimos $QUEUE_PENDING WhatsApps..." | tee -a "$LOG"
+    for i in $(seq 1 120); do
+      QUEUE_PENDING=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_pending // 0' 2>/dev/null)
+      if [[ "$QUEUE_PENDING" -eq 0 ]]; then break; fi
       sleep 5
-    fi
-  done
+    done
+  fi
 
-  # Esperar a que la cola de WhatsApp se vacíe (max 10 min)
-  echo "" | tee -a "$LOG"
-  echo "Esperando a que la cola de WhatsApp se vacíe..." | tee -a "$LOG"
-  for i in $(seq 1 120); do
-    QUEUE_PENDING=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_pending // 0' 2>/dev/null)
-    QUEUE_SENT=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_sent // 0' 2>/dev/null)
-    if [[ "$QUEUE_PENDING" -eq 0 ]]; then
-      echo "Cola vacía. Enviados: $QUEUE_SENT" | tee -a "$LOG"
-      break
-    fi
-    if [[ $((i % 12)) -eq 0 ]]; then
-      echo "  Cola: $QUEUE_PENDING pendientes, $QUEUE_SENT enviados..." | tee -a "$LOG"
-    fi
-    sleep 5
-  done
+  FINAL_SENT=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_sent // 0' 2>/dev/null)
 
-  echo "" | tee -a "$LOG"
-  echo "Resumen: $PROCESSED procesados" | tee -a "$LOG"
+  # ── Resumen final ──
+  echo "═══════════════════════════════════════" | tee -a "$LOG"
+  echo "  Resumen del dia" | tee -a "$LOG"
+  echo "═══════════════════════════════════════" | tee -a "$LOG"
+  echo "  Inmuebles revisados:   $PROCESSED" | tee -a "$LOG"
+  echo "  Telefonos encontrados: $PHONES_FOUND" | tee -a "$LOG"
+  echo "  WhatsApps enviados:    $FINAL_SENT" | tee -a "$LOG"
+  echo "  Sin telefono:          $NO_PHONE" | tee -a "$LOG"
+  if [[ "$ERRORS" -gt 0 ]]; then
+    echo "  Errores:               $ERRORS" | tee -a "$LOG"
+  fi
+  echo "═══════════════════════════════════════" | tee -a "$LOG"
 
-  # Paso 4: Apagar servidor puente (solo si lo lanzamos nosotros)
+  # Apagar servidor (solo si lo arrancamos nosotros)
   if [[ "$SERVER_ALREADY_RUNNING" == "false" && -n "$SERVER_PID" ]]; then
-    echo "Apagando servidor puente..." | tee -a "$LOG"
     curl -s -X POST "http://127.0.0.1:$SERVER_PORT/shutdown" >/dev/null 2>&1 || true
     wait $SERVER_PID 2>/dev/null || true
   fi
 
   echo "" | tee -a "$LOG"
-  echo "Run API completado — $DATE $(date +%H:%M)" | tee -a "$LOG"
+  echo "Listo — $(date +%H:%M)" | tee -a "$LOG"
 
 # ═══════════════════════════════════════════
 #  MODO EMAIL — BetterPlace (flujo original)
