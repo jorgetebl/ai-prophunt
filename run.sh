@@ -499,6 +499,13 @@ elif [[ "$MODE" == "api" ]]; then
     echo "" | tee -a "$LOG"
     echo "[$PROCESSED/$PENDING_COUNT] Procesando: $PROP_ZONE ($PROP_URL)" | tee -a "$LOG"
 
+    # Esperar a que el pipeline esté libre antes de enviar
+    for w in $(seq 1 60); do
+      PIPE_STATE=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.done // false' 2>/dev/null)
+      if [[ "$PIPE_STATE" == "true" ]]; then break; fi
+      sleep 3
+    done
+
     # Enviar al pipeline
     RESPONSE=$(curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-direct" \
       -H "Content-Type: application/json" \

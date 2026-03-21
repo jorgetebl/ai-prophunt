@@ -985,7 +985,7 @@ function startScheduler() {
       hhmm >= runTime && hhmm < nextMinute(runTime) &&
       workingDays.includes(dayOfWeek) &&
       schedulerLastRunDate !== today &&
-      pipeline.state === 'IDLE' || pipeline.state === 'DONE'
+      (pipeline.state === 'IDLE' || pipeline.state === 'DONE')
     ) {
       schedulerLastRunDate = today;
       log(`Scheduler: triggering daily API search (${today} ${hhmm})`);
