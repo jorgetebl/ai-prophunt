@@ -789,18 +789,20 @@ elif [[ "$MODE" == "betterplace" ]]; then
   echo "Pipeline: $PIPELINE_RESPONSE" | tee -a "$LOG"
 
   # Esperar a que el pipeline termine (máx 30 min)
+  # IMPORTANT: use /pipeline/status instead of /browser/next-task to avoid
+  # interfering with the Chrome extension's polling of next-task
   echo "Esperando a que el pipeline termine..." | tee -a "$LOG"
   for i in $(seq 1 360); do
-    STATE=$(curl -s "http://127.0.0.1:$SERVER_PORT/health" | jq -r '.ok // "false"' 2>/dev/null)
-    PIPELINE_STATE=$(curl -s "http://127.0.0.1:$SERVER_PORT/browser/next-task" 2>/dev/null)
-    TASK_TYPE=$(echo "$PIPELINE_STATE" | jq -r '.type // "unknown"' 2>/dev/null)
-    if [[ "$TASK_TYPE" == "idle" ]]; then
-      sleep 5
-      # Check again — could be transitioning
-      TASK_TYPE2=$(curl -s "http://127.0.0.1:$SERVER_PORT/browser/next-task" | jq -r '.type // "unknown"' 2>/dev/null)
-      if [[ "$TASK_TYPE2" == "idle" ]]; then
-        break
-      fi
+    PDONE=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.done // "false"' 2>/dev/null)
+    PSTATE=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.state // "unknown"' 2>/dev/null)
+    if [[ "$PDONE" == "true" ]]; then
+      PRESULTS=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.results // 0' 2>/dev/null)
+      echo "Pipeline terminado (estado: $PSTATE, resultados: $PRESULTS)" | tee -a "$LOG"
+      break
+    fi
+    # Show progress every 30s (every 6 iterations)
+    if (( i % 6 == 0 )); then
+      echo "  ... pipeline en estado: $PSTATE" | tee -a "$LOG"
     fi
     sleep 5
   done
