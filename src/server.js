@@ -8,7 +8,7 @@ import { log } from './logger.js';
 import { normalizePhone, isValidMobile } from './phone.js';
 import { loadContacted, getTodayContactCount } from './filter.js';
 import { createQueue } from './queue.js';
-import { isConfigured, getUserId, getContacts, getLogs as sbGetLogs, getConfig as sbGetConfig, init as initSupabase } from './supabase.js';
+import { isConfigured, getUserId, getContacts, addContact, getLogs as sbGetLogs, getConfig as sbGetConfig, init as initSupabase } from './supabase.js';
 import { parseEmail, extractPhone, extractDetails, buildMessage as claudeBuildMessage, setAccessToken } from './claude.js';
 
 const CONFIG_PATH = join(import.meta.dirname, '..', 'config.json');
@@ -63,6 +63,34 @@ async function getTodayCount() {
 function isInQueue(phone, url) {
   const state = queue.getState();
   return state.items.some(i => i.phone === phone || (url && i.url === url));
+}
+
+async function saveSkippedContact(prop, status, phone) {
+  const contactData = {
+    phone: phone ? `34${normalizePhone(phone) || phone}` : '',
+    name: prop.name || '',
+    url: prop.url,
+    propertyCode: prop.propertyCode || '',
+    portal: prop.portal || 'idealista',
+    zone: prop.zone || '',
+    price: prop.price || null,
+    date_contacted: new Date().toISOString(),
+    status,
+    message_preview: '',
+  };
+
+  try {
+    if (isConfigured()) {
+      await addContact(await getUserId(), contactData);
+    }
+  } catch (err) {
+    log(`saveSkippedContact supabase error: ${err.message}`);
+  }
+
+  // Always write to local JSON
+  const contacted = loadContacted();
+  contacted.contacts.push(contactData);
+  writeFileSync(join(import.meta.dirname, '..', 'data', 'contacted.json'), JSON.stringify(contacted, null, 2) + '\n');
 }
 
 function isDuplicateInContacted(phone, url) {
@@ -156,6 +184,7 @@ async function processPhoneResult(domText) {
     if (!realPhone || !isValidMobile(realPhone, prefixes)) {
       pipelineLog(`Phone invalid or landline: ${result.phone} — skip`);
       pipeline.results.push({ ...prop, status: 'skipped_landline' });
+      await saveSkippedContact(prop, 'skipped_landline', result.phone);
       startNextProperty();
       return;
     }
@@ -236,6 +265,7 @@ async function processPhoneResult(domText) {
   } else {
     pipelineLog(`No phone found for ${prop.url}`);
     pipeline.results.push({ ...prop, status: 'failed_no_phone' });
+    await saveSkippedContact(prop, 'failed_no_phone');
     startNextProperty();
   }
 }
@@ -337,6 +367,7 @@ async function handleBrowserDom(req, res) {
         if (/\bprofesional\b/.test(domLower) && !/\bparticular\b/.test(domLower)) {
           pipelineLog(`Agency detected in DOM ("Profesional") — skip ${pipeline.currentProperty.url}`);
           pipeline.results.push({ ...pipeline.currentProperty, status: 'skipped_agency_dom' });
+          await saveSkippedContact(pipeline.currentProperty, 'skipped_agency_dom');
           startNextProperty();
           return;
         }
@@ -345,6 +376,7 @@ async function handleBrowserDom(req, res) {
     } catch (err) {
       pipelineLog(`processPhoneResult error: ${err.message}`);
       pipeline.results.push({ ...pipeline.currentProperty, status: 'failed_error' });
+      await saveSkippedContact(pipeline.currentProperty, 'failed_error');
       startNextProperty();
     }
     return;
@@ -377,6 +409,7 @@ async function handleBrowserActionDone(req, res) {
     } else {
       pipelineLog(`Property navigation failed: ${body.error}`);
       pipeline.results.push({ ...pipeline.currentProperty, status: 'failed_navigate' });
+      await saveSkippedContact(pipeline.currentProperty, 'failed_navigate');
       startNextProperty();
     }
     return;
@@ -391,6 +424,7 @@ async function handleBrowserActionDone(req, res) {
       } catch (err) {
         pipelineLog(`processPhoneResult error: ${err.message}`);
         pipeline.results.push({ ...pipeline.currentProperty, status: 'failed_error' });
+        await saveSkippedContact(pipeline.currentProperty, 'failed_error');
         startNextProperty();
       }
     } else if (body.ok) {
@@ -398,6 +432,7 @@ async function handleBrowserActionDone(req, res) {
     } else {
       pipelineLog('Click failed — no phone');
       pipeline.results.push({ ...pipeline.currentProperty, status: 'failed_no_phone' });
+      await saveSkippedContact(pipeline.currentProperty, 'failed_no_phone');
       startNextProperty();
     }
     return;
