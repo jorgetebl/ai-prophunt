@@ -74,13 +74,13 @@ if ! command -v wacli &>/dev/null; then
   command -v brew &>/dev/null && brew install steipete/tap/wacli 2>/dev/null || ERRORS+=("wacli")
 fi
 
-# Verify node exists
-NODE_BIN="$(which node 2>/dev/null || echo "")"
+# Verify node exists — check common paths first (which/command -v can fail in piped shells)
+NODE_BIN=""
+for candidate in /usr/local/bin/node /opt/homebrew/bin/node "$HOME/.nvm/versions/node"/*/bin/node; do
+  if [[ -x "$candidate" ]]; then NODE_BIN="$candidate"; break; fi
+done
 if [[ -z "$NODE_BIN" ]]; then
-  # Search common locations
-  for candidate in /opt/homebrew/bin/node /usr/local/bin/node "$HOME/.nvm/versions/node"/*/bin/node; do
-    if [[ -x "$candidate" ]]; then NODE_BIN="$candidate"; break; fi
-  done
+  NODE_BIN="$(command -v node 2>/dev/null || which node 2>/dev/null || echo "")"
 fi
 
 if [[ -z "$NODE_BIN" ]]; then
@@ -382,14 +382,19 @@ rm -f /tmp/prophunt-cli
 echo ""
 echo "[5/5] Configurando servidor..."
 
-NODE_DIR="$(dirname "${NODE_BIN:-/usr/local/bin/node}")"
-
-# Create start script (guaranteed correct cwd + node path)
-cat > "$INSTALL_DIR/start-server.sh" <<WRAPEOF
+# Create start script — finds node at runtime so it always works
+cat > "$INSTALL_DIR/start-server.sh" <<'WRAPEOF'
 #!/bin/bash
-cd "$INSTALL_DIR" || exit 1
-export PATH="$NODE_DIR:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-exec "$NODE_BIN" "$INSTALL_DIR/server.bundle.cjs"
+cd "$HOME/ai-prophunt" || exit 1
+export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH"
+NODE="$(command -v node 2>/dev/null)"
+if [[ -z "$NODE" ]]; then
+  for c in /usr/local/bin/node /opt/homebrew/bin/node; do
+    [[ -x "$c" ]] && NODE="$c" && break
+  done
+fi
+if [[ -z "$NODE" ]]; then echo "ERROR: node no encontrado"; exit 1; fi
+exec "$NODE" "$HOME/ai-prophunt/server.bundle.cjs"
 WRAPEOF
 chmod +x "$INSTALL_DIR/start-server.sh"
 
