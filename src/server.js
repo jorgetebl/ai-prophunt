@@ -331,6 +331,15 @@ async function handleBrowserDom(req, res) {
         } catch (err) {
           pipelineLog(`extractDetails error (non-fatal): ${err.message}`);
         }
+
+        // Check DOM for agency indicators before wasting time on phone extraction
+        const domLower = (body.dom || '').toLowerCase();
+        if (/\bprofesional\b/.test(domLower) && !/\bparticular\b/.test(domLower)) {
+          pipelineLog(`Agency detected in DOM ("Profesional") — skip ${pipeline.currentProperty.url}`);
+          pipeline.results.push({ ...pipeline.currentProperty, status: 'skipped_agency_dom' });
+          startNextProperty();
+          return;
+        }
       }
       await processPhoneResult(body.dom || '');
     } catch (err) {

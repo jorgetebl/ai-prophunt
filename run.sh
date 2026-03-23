@@ -589,14 +589,24 @@ elif [[ "$MODE" == "api" ]]; then
       ERRORS=$((ERRORS + 1))
     fi
 
-    # Comprobar si se envio WhatsApp
+    # Comprobar resultado leyendo el ultimo log del servidor
     QUEUE_SENT_NOW=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_sent // 0' 2>/dev/null)
     QUEUE_PENDING=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" | jq -r '.queue_pending // 0' 2>/dev/null)
+    LAST_LOG_LINE=$(tail -5 "$LOG" 2>/dev/null | grep -i "Pipeline" | tail -1)
 
     if [[ "$QUEUE_PENDING" -gt 0 || "$QUEUE_SENT_NOW" -gt "$MESSAGES_SENT" ]]; then
       PHONES_FOUND=$((PHONES_FOUND + 1))
-      echo "  ✓ WhatsApp enviado" | tee -a "$LOG"
+      echo "  ✓ Telefono encontrado — WhatsApp enviado" | tee -a "$LOG"
       MESSAGES_SENT=$QUEUE_SENT_NOW
+    elif echo "$LAST_LOG_LINE" | grep -qi "agency"; then
+      SKIPPED=$((SKIPPED + 1))
+      echo "  ✗ Es una agencia (detectada en la ficha)" | tee -a "$LOG"
+    elif echo "$LAST_LOG_LINE" | grep -qi "landline"; then
+      SKIPPED=$((SKIPPED + 1))
+      echo "  ✗ Telefono fijo (probablemente agencia)" | tee -a "$LOG"
+    elif echo "$LAST_LOG_LINE" | grep -qi "duplicate"; then
+      SKIPPED=$((SKIPPED + 1))
+      echo "  — Ya contactado anteriormente" | tee -a "$LOG"
     else
       NO_PHONE=$((NO_PHONE + 1))
       echo "  — No se encontro telefono" | tee -a "$LOG"
@@ -630,6 +640,9 @@ elif [[ "$MODE" == "api" ]]; then
   echo "  Inmuebles revisados:   $PROCESSED" | tee -a "$LOG"
   echo "  Telefonos encontrados: $PHONES_FOUND" | tee -a "$LOG"
   echo "  WhatsApps enviados:    $FINAL_SENT" | tee -a "$LOG"
+  if [[ "$SKIPPED" -gt 0 ]]; then
+    echo "  Agencias/fijos:        $SKIPPED (descartados)" | tee -a "$LOG"
+  fi
   echo "  Sin telefono:          $NO_PHONE" | tee -a "$LOG"
   if [[ "$ERRORS" -gt 0 ]]; then
     echo "  Errores:               $ERRORS" | tee -a "$LOG"
