@@ -95,7 +95,7 @@ async function main() {
     config: {
       validPhonePrefixes: config.filters?.valid_phone_prefixes || ['6', '7'],
       maxContactsPerDay: maxPerDay,
-      slotsLeft,
+      slotsLeft: 'unlimited (server enforced)',
       minDelayBetweenMessages: config.filters?.min_delay_between_messages_seconds || 120,
     },
     properties: pending,
