@@ -325,7 +325,7 @@ EOF
     REPO="jorgetebl/ai-prophunt"
     RELEASES_URL="https://github.com/$REPO/releases/download/latest"
     curl -fL "$RELEASES_URL/server.bundle.cjs" -o "$INSTALL_DIR/server.bundle.cjs" 2>/dev/null && echo "Servidor actualizado" || echo "ERROR servidor"
-    curl -fL "$RELEASES_URL/search.bundle.cjs" -o "$INSTALL_DIR/search.bundle.cjs" 2>/tmp/prophunt-curl.log && echo "API search actualizado" || echo "ERROR API search ($(cat /tmp/prophunt-curl.log 2>/dev/null))"
+    curl -fL "$RELEASES_URL/search.bundle.cjs" -o "$INSTALL_DIR/search.bundle.cjs" 2>/dev/null && echo "API search actualizado" || echo "ERROR API search"
     EXT_ZIP="/tmp/prophunt-ext.zip"
     if curl -fL "$RELEASES_URL/chrome-extension.zip" -o "$EXT_ZIP" 2>/dev/null && [[ -s "$EXT_ZIP" ]]; then
       unzip -q -o "$EXT_ZIP" -d "$INSTALL_DIR/chrome-extension"; rm -f "$EXT_ZIP"; echo "Extension actualizada"
