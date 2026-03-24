@@ -60,6 +60,7 @@ jobs:
           files: |
             dist/prophunt-server
             dist/server.bundle.cjs
+            dist/search.bundle.cjs
             dist/chrome-extension.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
