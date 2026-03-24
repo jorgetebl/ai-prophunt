@@ -324,13 +324,25 @@ EOF
     echo "Actualizando AI PropHunt..."
     REPO="jorgetebl/ai-prophunt"
     RELEASES_URL="https://github.com/$REPO/releases/download/latest"
-    curl -sfL "$RELEASES_URL/server.bundle.cjs" -o "$INSTALL_DIR/server.bundle.cjs" && echo "Servidor actualizado" || echo "ERROR servidor"
-    curl -sfL "$RELEASES_URL/search.bundle.cjs" -o "$INSTALL_DIR/search.bundle.cjs" && echo "API search actualizado" || echo "ERROR API search"
+    curl -fL "$RELEASES_URL/server.bundle.cjs" -o "$INSTALL_DIR/server.bundle.cjs" 2>/dev/null && echo "Servidor actualizado" || echo "ERROR servidor"
+    curl -fL "$RELEASES_URL/search.bundle.cjs" -o "$INSTALL_DIR/search.bundle.cjs" 2>/dev/null && echo "API search actualizado" || echo "ERROR API search"
     EXT_ZIP="/tmp/prophunt-ext.zip"
-    if curl -sfL "$RELEASES_URL/chrome-extension.zip" -o "$EXT_ZIP" && [[ -s "$EXT_ZIP" ]]; then
+    if curl -fL "$RELEASES_URL/chrome-extension.zip" -o "$EXT_ZIP" 2>/dev/null && [[ -s "$EXT_ZIP" ]]; then
       unzip -q -o "$EXT_ZIP" -d "$INSTALL_DIR/chrome-extension"; rm -f "$EXT_ZIP"; echo "Extension actualizada"
     fi
-    curl -sfL "https://raw.githubusercontent.com/$REPO/main/run.sh" -o "$INSTALL_DIR/run.sh" && chmod +x "$INSTALL_DIR/run.sh" && echo "run.sh actualizado" || true
+    curl -fL "https://raw.githubusercontent.com/$REPO/main/run.sh" -o "$INSTALL_DIR/run.sh" 2>/dev/null && chmod +x "$INSTALL_DIR/run.sh" && echo "run.sh actualizado" || true
+    # Self-update CLI
+    curl -fL "https://raw.githubusercontent.com/$REPO/main/install.sh" -o /tmp/prophunt-install-check.sh 2>/dev/null
+    if [[ -s /tmp/prophunt-install-check.sh ]]; then
+      CLI_BLOCK=$(sed -n '/^cat > \/tmp\/prophunt-cli/,/^CLIFEOF$/p' /tmp/prophunt-install-check.sh)
+      if [[ -n "$CLI_BLOCK" ]]; then
+        eval "$CLI_BLOCK"
+        CLI_PATH="$(command -v prophunt 2>/dev/null)"
+        [[ -n "$CLI_PATH" ]] && cp /tmp/prophunt-cli "$CLI_PATH" && chmod +x "$CLI_PATH" && echo "CLI actualizado"
+        rm -f /tmp/prophunt-cli
+      fi
+      rm -f /tmp/prophunt-install-check.sh
+    fi
     echo "Hecho. Ejecuta: prophunt stop && prophunt start"
     ;;
   uninstall)
