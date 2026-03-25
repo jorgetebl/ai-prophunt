@@ -1002,7 +1002,7 @@ async function start() {
   server.listen(PORT, '127.0.0.1', () => {
     log(`Server: listening on http://127.0.0.1:${PORT} (dry-run: ${dryRun})`);
     startScheduler();
-    startBetterplacePolling();
+    startAutoUpdate();
   });
 }
 
@@ -1172,68 +1172,122 @@ async function runDailyApiSearch() {
   }
 }
 
-// --- BetterPlace polling (every 30 min) ---
+// --- Auto-update (check for new version every 30 min) ---
 
-let betterplaceLastRun = 0;
+let lastUpdateCheck = 0;
+const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000; // 30 minutes
 
-function startBetterplacePolling() {
-  const schedule = config.schedule || {};
-  const pollingMin = schedule.betterplace_polling_minutes || 30;
-  const intervalMs = pollingMin * 60 * 1000;
-  const tz = schedule.timezone || 'Europe/Madrid';
-  const workingDays = schedule.working_days || [1, 2, 3, 4, 5];
-
-  log(`BetterPlace polling: every ${pollingMin} min during working hours`);
+function startAutoUpdate() {
+  log('Auto-update: checking every 30 min');
 
   setInterval(async () => {
-    const now = new Date();
-    const madridNow = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-    const hour = madridNow.getHours();
-    const dayOfWeek = madridNow.getDay();
-
-    // Only during working hours (9-14, 16-20) and working days
-    const inMorning = hour >= 9 && hour < 14;
-    const inAfternoon = hour >= 16 && hour < 20;
-    if (!workingDays.includes(dayOfWeek) || (!inMorning && !inAfternoon)) return;
-
-    // Skip if pipeline is already running
+    // Skip if pipeline is running
     if (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') return;
 
-    // Skip if ran recently
-    if (Date.now() - betterplaceLastRun < intervalMs) return;
+    // Skip if checked recently
+    if (Date.now() - lastUpdateCheck < UPDATE_CHECK_INTERVAL) return;
+    lastUpdateCheck = Date.now();
 
-    // Check daily rate limit
     try {
-      const userId = await getUserId();
-      if (userId) {
-        const cfg = await sbGetConfig(userId);
-        const max = cfg?.max_contacts_per_day || 15;
-        const today = madridNow.toLocaleDateString('sv-SE');
-        const todayContacts = await getContacts(userId, { date: today });
-        const sentToday = todayContacts.filter(c => ['sent', 'test', 'dry_run', 'queued'].includes(c.status)).length;
-        if (sentToday >= max) {
-          log(`BetterPlace polling: daily limit reached (${sentToday}/${max}), skipping`);
-          return;
+      const repo = 'jorgetebl/ai-prophunt';
+      const releasesUrl = `https://github.com/${repo}/releases/download/latest`;
+
+      // Download server bundle to temp file and compare size
+      const tmpServer = join(PROJECT_ROOT, 'server.bundle.cjs.tmp');
+      const currentServer = join(PROJECT_ROOT, 'server.bundle.cjs');
+
+      execSync(`curl -fL "${releasesUrl}/server.bundle.cjs" -o "${tmpServer}" 2>/dev/null`, { timeout: 30000 });
+
+      // Compare with current
+      const currentExists = existsSync(currentServer);
+      let needsUpdate = !currentExists;
+
+      if (currentExists) {
+        const currentSize = readFileSync(currentServer).length;
+        const newSize = readFileSync(tmpServer).length;
+        if (currentSize !== newSize) {
+          needsUpdate = true;
+        } else {
+          // Same size, compare content hash
+          const crypto = await import('node:crypto');
+          const currentHash = crypto.createHash('md5').update(readFileSync(currentServer)).digest('hex');
+          const newHash = crypto.createHash('md5').update(readFileSync(tmpServer)).digest('hex');
+          needsUpdate = currentHash !== newHash;
         }
       }
-    } catch { /* proceed */ }
 
-    betterplaceLastRun = Date.now();
-    log(`BetterPlace polling: triggering pipeline`);
+      if (!needsUpdate) {
+        execSync(`rm -f "${tmpServer}"`);
+        return;
+      }
 
-    // Start betterplace pipeline (navigate to Gmail)
-    pipeline = {
-      state: 'GMAIL_NAVIGATE',
-      taskId: nextTaskId(),
-      properties: [],
-      currentIdx: 0,
-      currentProperty: null,
-      clickAttempts: 0,
-      results: [],
-      _pendingClickHint: null,
-    };
+      log('Auto-update: new version detected, updating...');
 
-    pipelineLog('BetterPlace polling — navigating to Gmail');
+      // Update server bundle
+      execSync(`mv "${tmpServer}" "${currentServer}"`);
+      log('Auto-update: server.bundle.cjs updated');
+
+      // Update search bundle
+      const searchBundle = join(PROJECT_ROOT, 'search.bundle.cjs');
+      execSync(`curl -fL "${releasesUrl}/search.bundle.cjs" -o "${searchBundle}" 2>/dev/null`, { timeout: 30000 });
+      log('Auto-update: search.bundle.cjs updated');
+
+      // Update chrome extension
+      const extZip = '/tmp/prophunt-ext-update.zip';
+      try {
+        execSync(`curl -fL "${releasesUrl}/chrome-extension.zip" -o "${extZip}" 2>/dev/null`, { timeout: 30000 });
+        if (existsSync(extZip)) {
+          execSync(`unzip -q -o "${extZip}" -d "${join(PROJECT_ROOT, 'chrome-extension')}"`, { timeout: 10000 });
+          execSync(`rm -f "${extZip}"`);
+          log('Auto-update: chrome-extension updated');
+        }
+      } catch { /* extension update optional */ }
+
+      // Update run.sh
+      try {
+        execSync(`curl -fL "https://raw.githubusercontent.com/${repo}/main/run.sh" -o "${join(PROJECT_ROOT, 'run.sh')}" 2>/dev/null && chmod +x "${join(PROJECT_ROOT, 'run.sh')}"`, { timeout: 15000 });
+        log('Auto-update: run.sh updated');
+      } catch { /* optional */ }
+
+      // Update CLI
+      try {
+        const installSh = '/tmp/prophunt-install-update.sh';
+        execSync(`curl -fL "https://raw.githubusercontent.com/${repo}/main/install.sh" -o "${installSh}" 2>/dev/null`, { timeout: 15000 });
+        if (existsSync(installSh)) {
+          const cliBlock = execSync(`sed -n '/^cat > \\/tmp\\/prophunt-cli/,/^CLIFEOF$/p' "${installSh}"`, { encoding: 'utf-8', timeout: 5000 });
+          if (cliBlock.trim()) {
+            execSync(`bash -c '${cliBlock.replace(/'/g, "'\\''")}'`, { timeout: 5000 });
+            // Find CLI path
+            try {
+              const cliPath = execSync('command -v prophunt', { encoding: 'utf-8', timeout: 3000 }).trim();
+              if (cliPath) {
+                execSync(`cp /tmp/prophunt-cli "${cliPath}" && chmod +x "${cliPath}"`);
+                log('Auto-update: CLI updated');
+              }
+            } catch { /* CLI update optional */ }
+            execSync('rm -f /tmp/prophunt-cli');
+          }
+          execSync(`rm -f "${installSh}"`);
+        }
+      } catch { /* optional */ }
+
+      log('Auto-update: complete — restarting server');
+
+      // Restart: re-launch and exit current process
+      const startScript = join(PROJECT_ROOT, 'start-server.sh');
+      if (existsSync(startScript)) {
+        spawn(startScript, [], { detached: true, stdio: 'ignore' }).unref();
+      } else {
+        const nodeCmd = process.argv[0];
+        const serverBundle = join(PROJECT_ROOT, 'server.bundle.cjs');
+        spawn(nodeCmd, [serverBundle, ...(dryRun ? ['--dry-run'] : [])], { detached: true, stdio: 'ignore', cwd: PROJECT_ROOT }).unref();
+      }
+      setTimeout(() => process.exit(0), 1000);
+
+    } catch (err) {
+      execSync(`rm -f "${join(PROJECT_ROOT, 'server.bundle.cjs.tmp')}" 2>/dev/null || true`);
+      log(`Auto-update: check failed — ${err.message}`);
+    }
   }, 60000); // Check every minute
 }
 
