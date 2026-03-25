@@ -1002,6 +1002,7 @@ async function start() {
   server.listen(PORT, '127.0.0.1', () => {
     log(`Server: listening on http://127.0.0.1:${PORT} (dry-run: ${dryRun})`);
     startScheduler();
+    startBetterplacePolling();
   });
 }
 
@@ -1169,6 +1170,71 @@ async function runDailyApiSearch() {
     log(`Scheduler: error — ${err.message}`);
     await sendNotification(`Ha habido un error durante la búsqueda de hoy. Lo reviso y mañana lo intento de nuevo.`).catch(() => {});
   }
+}
+
+// --- BetterPlace polling (every 30 min) ---
+
+let betterplaceLastRun = 0;
+
+function startBetterplacePolling() {
+  const schedule = config.schedule || {};
+  const pollingMin = schedule.betterplace_polling_minutes || 30;
+  const intervalMs = pollingMin * 60 * 1000;
+  const tz = schedule.timezone || 'Europe/Madrid';
+  const workingDays = schedule.working_days || [1, 2, 3, 4, 5];
+
+  log(`BetterPlace polling: every ${pollingMin} min during working hours`);
+
+  setInterval(async () => {
+    const now = new Date();
+    const madridNow = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+    const hour = madridNow.getHours();
+    const dayOfWeek = madridNow.getDay();
+
+    // Only during working hours (9-14, 16-20) and working days
+    const inMorning = hour >= 9 && hour < 14;
+    const inAfternoon = hour >= 16 && hour < 20;
+    if (!workingDays.includes(dayOfWeek) || (!inMorning && !inAfternoon)) return;
+
+    // Skip if pipeline is already running
+    if (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') return;
+
+    // Skip if ran recently
+    if (Date.now() - betterplaceLastRun < intervalMs) return;
+
+    // Check daily rate limit
+    try {
+      const userId = await getUserId();
+      if (userId) {
+        const cfg = await sbGetConfig(userId);
+        const max = cfg?.max_contacts_per_day || 15;
+        const today = madridNow.toLocaleDateString('sv-SE');
+        const todayContacts = await getContacts(userId, { date: today });
+        const sentToday = todayContacts.filter(c => ['sent', 'test', 'dry_run', 'queued'].includes(c.status)).length;
+        if (sentToday >= max) {
+          log(`BetterPlace polling: daily limit reached (${sentToday}/${max}), skipping`);
+          return;
+        }
+      }
+    } catch { /* proceed */ }
+
+    betterplaceLastRun = Date.now();
+    log(`BetterPlace polling: triggering pipeline`);
+
+    // Start betterplace pipeline (navigate to Gmail)
+    pipeline = {
+      state: 'GMAIL_NAVIGATE',
+      taskId: nextTaskId(),
+      properties: [],
+      currentIdx: 0,
+      currentProperty: null,
+      clickAttempts: 0,
+      results: [],
+      _pendingClickHint: null,
+    };
+
+    pipelineLog('BetterPlace polling — navigating to Gmail');
+  }, 60000); // Check every minute
 }
 
 // --- Graceful shutdown on signals ---
