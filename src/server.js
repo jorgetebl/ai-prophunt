@@ -1189,8 +1189,7 @@ function startAutoUpdate() {
     lastUpdateCheck = Date.now();
 
     try {
-      const repo = 'jorgetebl/ai-prophunt';
-      const releasesUrl = `https://github.com/${repo}/releases/download/latest`;
+      const releasesUrl = 'https://prophunt-app.netlify.app/releases';
 
       // Download server bundle to temp file and compare size
       const tmpServer = join(PROJECT_ROOT, 'server.bundle.cjs.tmp');
@@ -1245,14 +1244,14 @@ function startAutoUpdate() {
 
       // Update run.sh
       try {
-        execSync(`curl -fL "https://raw.githubusercontent.com/${repo}/main/run.sh" -o "${join(PROJECT_ROOT, 'run.sh')}" 2>/dev/null && chmod +x "${join(PROJECT_ROOT, 'run.sh')}"`, { timeout: 15000 });
+        execSync(`curl -fL "${releasesUrl}/run.sh" -o "${join(PROJECT_ROOT, 'run.sh')}" 2>/dev/null && chmod +x "${join(PROJECT_ROOT, 'run.sh')}"`, { timeout: 15000 });
         log('Auto-update: run.sh updated');
       } catch { /* optional */ }
 
       // Update CLI
       try {
         const installSh = '/tmp/prophunt-install-update.sh';
-        execSync(`curl -fL "https://raw.githubusercontent.com/${repo}/main/install.sh" -o "${installSh}" 2>/dev/null`, { timeout: 15000 });
+        execSync(`curl -fL "${releasesUrl}/install.sh" -o "${installSh}" 2>/dev/null`, { timeout: 15000 });
         if (existsSync(installSh)) {
           const cliBlock = execSync(`sed -n '/^cat > \\/tmp\\/prophunt-cli/,/^CLIFEOF$/p' "${installSh}"`, { encoding: 'utf-8', timeout: 5000 });
           if (cliBlock.trim()) {

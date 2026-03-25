@@ -48,7 +48,7 @@ console.log('Step 3/4 — Creating launcher script...');
 const launcher = `#!/bin/bash
 exec node "$(dirname "$0")/server.bundle.cjs" "$@"
 `;
-import { writeFileSync, chmodSync } from 'node:fs';
+import { writeFileSync, chmodSync, existsSync, copyFileSync } from 'node:fs';
 writeFileSync(join(DIST, 'prophunt-server'), launcher);
 chmodSync(join(DIST, 'prophunt-server'), 0o755);
 
@@ -58,6 +58,28 @@ execSync(
   `cd chrome-extension && zip -r ../dist/chrome-extension.zip . -x "*.DS_Store"`,
   { cwd: ROOT, stdio: 'inherit' }
 );
+
+// ── Step 5: Copy release assets to landing/ for Netlify hosting ────────────
+const LANDING_RELEASES = join(ROOT, 'landing', 'releases');
+mkdirSync(LANDING_RELEASES, { recursive: true });
+for (const f of ['server.bundle.cjs', 'search.bundle.cjs', 'chrome-extension.zip']) {
+  const src = join(DIST, f);
+  if (existsSync(src)) {
+    copyFileSync(src, join(LANDING_RELEASES, f));
+  }
+}
+// Also copy supporting files
+for (const f of ['run.sh', 'install.sh', 'config.example.json']) {
+  const src = join(ROOT, f);
+  if (existsSync(src)) {
+    copyFileSync(src, join(LANDING_RELEASES, f));
+  }
+}
+const whatsappTpl = join(ROOT, 'templates', 'whatsapp.txt');
+if (existsSync(whatsappTpl)) {
+  copyFileSync(whatsappTpl, join(LANDING_RELEASES, 'whatsapp.txt'));
+}
+console.log('Step 5/5 — Release assets copied to landing/releases/');
 
 console.log('\nBuild complete:');
 execSync('ls -lh dist/', { cwd: ROOT, stdio: 'inherit' });

@@ -14,5 +14,6 @@ config.json
 # Local Netlify folder
 .netlify
 
-# Build output (distributed via GitHub Releases, not in repo)
+# Build output (distributed via Netlify, not in repo)
 dist/
+landing/releases/

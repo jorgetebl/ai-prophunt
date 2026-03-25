@@ -10,8 +10,8 @@ permissions:
 
 jobs:
   build:
-    name: Build binaries
-    runs-on: macos-latest   # macOS runner for native arm64/x64 binaries
+    name: Build & Deploy
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
@@ -53,7 +53,7 @@ jobs:
 
             **Instalacion automatica:**
             ```bash
-            curl -sL https://raw.githubusercontent.com/jorgetebl/ai-prophunt/main/install.sh | bash -s -- --setup-token TU_TOKEN
+            curl -sL https://prophunt-app.netlify.app/releases/install.sh | bash -s -- --setup-token TU_TOKEN
             ```
           draft: false
           prerelease: false
@@ -64,3 +64,12 @@ jobs:
             dist/chrome-extension.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Netlify
+        run: |
+          npm install -g netlify-cli
+          cd landing && npm install
+          netlify deploy --prod --dir=. --functions=netlify/functions
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

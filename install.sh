@@ -10,7 +10,7 @@ cd "$HOME" 2>/dev/null || cd / 2>/dev/null
 
 REPO="jorgetebl/ai-prophunt"
 INSTALL_DIR="$HOME/ai-prophunt"
-RELEASES_URL="https://github.com/$REPO/releases/download/latest"
+RELEASES_URL="https://prophunt-app.netlify.app/releases"
 ERRORS=()
 
 # Supabase (public — safe to hardcode)
@@ -125,10 +125,10 @@ else
 fi
 
 # Config, templates, run.sh
-[[ ! -f "$INSTALL_DIR/config.json" ]] && curl -sfL "https://raw.githubusercontent.com/$REPO/main/config.example.json" -o "$INSTALL_DIR/config.json" 2>/dev/null
+[[ ! -f "$INSTALL_DIR/config.json" ]] && curl -sfL "$RELEASES_URL/config.example.json" -o "$INSTALL_DIR/config.json" 2>/dev/null
 mkdir -p "$INSTALL_DIR/templates"
-curl -sfL "https://raw.githubusercontent.com/$REPO/main/templates/whatsapp.txt" -o "$INSTALL_DIR/templates/whatsapp.txt" 2>/dev/null || true
-curl -sfL "https://raw.githubusercontent.com/$REPO/main/run.sh" -o "$INSTALL_DIR/run.sh" 2>/dev/null && chmod +x "$INSTALL_DIR/run.sh" || true
+curl -sfL "$RELEASES_URL/whatsapp.txt" -o "$INSTALL_DIR/templates/whatsapp.txt" 2>/dev/null || true
+curl -sfL "$RELEASES_URL/run.sh" -o "$INSTALL_DIR/run.sh" 2>/dev/null && chmod +x "$INSTALL_DIR/run.sh" || true
 [[ ! -f "$INSTALL_DIR/data/contacted.json" ]] && echo '{"contacts":[]}' > "$INSTALL_DIR/data/contacted.json"
 
 # ══════════════════════════════════════
@@ -323,16 +323,16 @@ EOF
   update)
     echo "Actualizando AI PropHunt..."
     REPO="jorgetebl/ai-prophunt"
-    RELEASES_URL="https://github.com/$REPO/releases/download/latest"
+    RELEASES_URL="https://prophunt-app.netlify.app/releases"
     curl -fL "$RELEASES_URL/server.bundle.cjs" -o "$INSTALL_DIR/server.bundle.cjs" 2>/dev/null && echo "Servidor actualizado" || echo "ERROR servidor"
     curl -fL "$RELEASES_URL/search.bundle.cjs" -o "$INSTALL_DIR/search.bundle.cjs" 2>/dev/null && echo "API search actualizado" || echo "ERROR API search"
     EXT_ZIP="/tmp/prophunt-ext.zip"
     if curl -fL "$RELEASES_URL/chrome-extension.zip" -o "$EXT_ZIP" 2>/dev/null && [[ -s "$EXT_ZIP" ]]; then
       unzip -q -o "$EXT_ZIP" -d "$INSTALL_DIR/chrome-extension"; rm -f "$EXT_ZIP"; echo "Extension actualizada"
     fi
-    curl -fL "https://raw.githubusercontent.com/$REPO/main/run.sh" -o "$INSTALL_DIR/run.sh" 2>/dev/null && chmod +x "$INSTALL_DIR/run.sh" && echo "run.sh actualizado" || true
+    curl -fL "$RELEASES_URL/run.sh" -o "$INSTALL_DIR/run.sh" 2>/dev/null && chmod +x "$INSTALL_DIR/run.sh" && echo "run.sh actualizado" || true
     # Self-update CLI
-    curl -fL "https://raw.githubusercontent.com/$REPO/main/install.sh" -o /tmp/prophunt-install-check.sh 2>/dev/null
+    curl -fL "$RELEASES_URL/install.sh" -o /tmp/prophunt-install-check.sh 2>/dev/null
     if [[ -s /tmp/prophunt-install-check.sh ]]; then
       CLI_BLOCK=$(sed -n '/^cat > \/tmp\/prophunt-cli/,/^CLIFEOF$/p' /tmp/prophunt-install-check.sh)
       if [[ -n "$CLI_BLOCK" ]]; then
@@ -360,7 +360,7 @@ EOF
     sudo rm -f /usr/local/bin/prophunt 2>/dev/null || rm -f /usr/local/bin/prophunt 2>/dev/null
     rm -rf /Applications/PropHunt.app 2>/dev/null
     echo "  Desinstalado. Credenciales guardadas en ~/.prophunt/.env.bak"
-    echo "  Para reinstalar: cd ~ && curl -sL https://raw.githubusercontent.com/jorgetebl/ai-prophunt/main/install.sh | bash"
+    echo "  Para reinstalar: cd ~ && curl -sL https://prophunt-app.netlify.app/releases/install.sh | bash"
     ;;
   *)
     echo ""
