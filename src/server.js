@@ -444,11 +444,19 @@ async function handleRunBetterplace(_req, res) {
     return json(res, 409, { error: 'Pipeline already running', state: pipeline.state });
   }
 
-  // Rate limit check before starting
+  // Mode + rate limit check before starting
   try {
     const userId = await getUserId();
     if (userId) {
       const cfg = await sbGetConfig(userId);
+
+      // Check mode
+      const mode = cfg?.mode || 'betterplace';
+      if (mode !== 'betterplace' && mode !== 'both') {
+        log(`BetterPlace blocked — user mode is '${mode}'`);
+        return json(res, 403, { error: `Modo '${mode}' no permite BetterPlace` });
+      }
+
       const maxPerDay = cfg?.max_contacts_per_day || 15;
       const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
       const todayContacts = await getContacts(userId, { date: today });
@@ -1019,7 +1027,7 @@ function startScheduler() {
   log(`Scheduler: daily API search at ${runTime} (${tz}), days: ${workingDays.join(',')}`);
 
   // Check every 30 seconds
-  setInterval(() => {
+  setInterval(async () => {
     const now = new Date();
     const madridNow = new Date(now.toLocaleString('en-US', { timeZone: tz }));
     const hhmm = madridNow.toTimeString().slice(0, 5); // "HH:MM"
@@ -1032,6 +1040,20 @@ function startScheduler() {
       schedulerLastRunDate !== today &&
       (pipeline.state === 'IDLE' || pipeline.state === 'DONE')
     ) {
+      // Check user mode — only run API search if mode is 'api' or 'both'
+      try {
+        const userId = await getUserId();
+        if (userId) {
+          const cfg = await sbGetConfig(userId);
+          const mode = cfg?.mode || 'betterplace';
+          if (mode !== 'api' && mode !== 'both') {
+            log(`Scheduler: skipping API search — user mode is '${mode}'`);
+            schedulerLastRunDate = today;
+            return;
+          }
+        }
+      } catch { /* proceed */ }
+
       schedulerLastRunDate = today;
       log(`Scheduler: triggering daily API search (${today} ${hhmm})`);
       runDailyApiSearch();
