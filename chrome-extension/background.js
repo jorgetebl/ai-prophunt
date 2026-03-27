@@ -29,6 +29,8 @@ async function poll() {
       await doNavigate(task.url, task.taskId);
     } else if (task.type === 'extract_dom') {
       await doExtractDom(task.taskId);
+    } else if (task.type === 'extract_links') {
+      await doExtractLinks(task.taskId);
     } else if (task.type === 'click') {
       await doClick(task.hint, task.taskId);
     }
@@ -104,6 +106,38 @@ function waitForLoad(tabId, resolve, taskId) {
   }, 30000);
 }
 
+async function doExtractLinks(taskId) {
+  if (!activeTabId) {
+    await fetch(`${SERVER}/browser/links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, links: [] }),
+    }).catch(() => {});
+    return;
+  }
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: activeTabId },
+      func: extractGmailThreadLinks,
+    });
+
+    const links = results?.[0]?.result || [];
+
+    await fetch(`${SERVER}/browser/links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, links }),
+    }).catch(() => {});
+  } catch (err) {
+    await fetch(`${SERVER}/browser/links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, links: [], error: err.message }),
+    }).catch(() => {});
+  }
+}
+
 async function doExtractDom(taskId) {
   if (!activeTabId) {
     await fetch(`${SERVER}/browser/dom`, {
@@ -177,6 +211,39 @@ async function doClick(hint, taskId) {
 }
 
 // ── Injected page functions ───────────────────────────────────────────────────
+
+function extractGmailThreadLinks() {
+  const seen = new Set();
+  const links = [];
+
+  // Gmail email rows in list/search view have class 'zA'
+  const rows = document.querySelectorAll('tr.zA');
+  rows.forEach(row => {
+    // Each row has anchor elements — grab the first one pointing to mail.google.com
+    const anchors = row.querySelectorAll('a[href]');
+    for (const a of anchors) {
+      const href = a.href;
+      if (href && href.includes('mail.google.com') && !seen.has(href)) {
+        seen.add(href);
+        links.push(href);
+        break;
+      }
+    }
+  });
+
+  // Fallback: any Gmail URL with a 16-char hex thread ID
+  if (links.length === 0) {
+    document.querySelectorAll('a[href*="mail.google.com"]').forEach(a => {
+      const href = a.href;
+      if (/\/[0-9a-f]{16}(\?|$|#|/)/.test(href) && !seen.has(href)) {
+        seen.add(href);
+        links.push(href);
+      }
+    });
+  }
+
+  return links;
+}
 
 function extractDomContent() {
   const clone = document.body.cloneNode(true);

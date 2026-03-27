@@ -343,7 +343,13 @@ EOF
       fi
       rm -f /tmp/prophunt-install-check.sh
     fi
+    VERSION=$(node -p "require('$INSTALL_DIR/package.json').version" 2>/dev/null || grep '"version"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
     echo "Hecho. Ejecuta: prophunt stop && prophunt start"
+    echo "Version instalada: v${VERSION:-?}"
+    ;;
+  --version|-v|version)
+    VERSION=$(node -p "require('$INSTALL_DIR/package.json').version" 2>/dev/null || grep '"version"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+    echo "prophunt v${VERSION:-?}"
     ;;
   uninstall)
     echo ""
@@ -364,14 +370,15 @@ EOF
     ;;
   *)
     echo ""
-    echo "  prophunt start       Iniciar servidor"
-    echo "  prophunt stop        Parar servidor"
-    echo "  prophunt status      Ver estado"
-    echo "  prophunt dashboard   Abrir panel web"
-    echo "  prophunt logs        Ver logs de hoy"
-    echo "  prophunt setup       Vincular cuenta"
-    echo "  prophunt update      Actualizar"
-    echo "  prophunt uninstall   Desinstalar"
+    echo "  prophunt start            Iniciar servidor"
+    echo "  prophunt stop             Parar servidor"
+    echo "  prophunt status           Ver estado"
+    echo "  prophunt dashboard        Abrir panel web"
+    echo "  prophunt logs             Ver logs de hoy"
+    echo "  prophunt setup            Vincular cuenta"
+    echo "  prophunt update           Actualizar a la ultima version"
+    echo "  prophunt uninstall        Desinstalar completamente"
+    echo "  prophunt --version        Ver version instalada"
     echo ""
     ;;
 esac

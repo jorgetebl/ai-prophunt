@@ -106,18 +106,23 @@ function isDuplicateInContacted(phone, url) {
 
 /**
  * States:
- * IDLE → GMAIL_NAVIGATE → GMAIL_DOM_PENDING → EMAIL_PARSED
- * → [for each property]:
- *     PROPERTY_NAVIGATE → DOM_PENDING → DOM_RECEIVED
- *     → (if click needed) CLICKING → DOM_PENDING_2
- *     → PHONE_FOUND | PHONE_FAILED
- * → DONE
+ * IDLE → GMAIL_NAVIGATE → GMAIL_NAVIGATE_WAITING → GMAIL_LINKS_PENDING
+ *      → [for each Gmail email]:
+ *          GMAIL_EMAIL_NAVIGATE → GMAIL_EMAIL_NAVIGATE_WAITING → GMAIL_EMAIL_DOM_PENDING
+ *          → EMAIL_PARSING (accumulate properties)
+ *      → [for each property]:
+ *          PROPERTY_NAVIGATE → DOM_PENDING → DOM_RECEIVED
+ *          → (if click needed) CLICKING → DOM_PENDING_2
+ *          → PHONE_FOUND | PHONE_FAILED
+ *      → DONE
  */
 
 let pipeline = {
   state: 'IDLE',
   taskId: null,
-  properties: [],      // parsed from email
+  emailUrls: [],       // Gmail thread URLs to open (one per BetterPlace email)
+  emailIdx: 0,         // current email index
+  properties: [],      // parsed from all emails combined
   currentIdx: 0,
   currentProperty: null,
   clickAttempts: 0,
@@ -281,14 +286,28 @@ function handleBrowserNextTask(_req, res) {
 
   if (state === 'GMAIL_NAVIGATE') {
     pipeline.state = 'GMAIL_NAVIGATE_WAITING';
-    return json(res, 200, { type: 'navigate', url: 'https://mail.google.com/', taskId });
+    return json(res, 200, { type: 'navigate', url: 'https://mail.google.com/#search/from:betterplace+newer_than:1d', taskId });
   }
 
   if (state === 'GMAIL_NAVIGATE_WAITING') {
     return json(res, 200, { type: 'idle' });
   }
 
-  if (state === 'GMAIL_DOM_PENDING') {
+  if (state === 'GMAIL_LINKS_PENDING') {
+    return json(res, 200, { type: 'extract_links', taskId });
+  }
+
+  if (state === 'GMAIL_EMAIL_NAVIGATE') {
+    pipeline.state = 'GMAIL_EMAIL_NAVIGATE_WAITING';
+    const url = pipeline.emailUrls[pipeline.emailIdx];
+    return json(res, 200, { type: 'navigate', url, taskId });
+  }
+
+  if (state === 'GMAIL_EMAIL_NAVIGATE_WAITING') {
+    return json(res, 200, { type: 'idle' });
+  }
+
+  if (state === 'GMAIL_EMAIL_DOM_PENDING') {
     return json(res, 200, { type: 'extract_dom', taskId });
   }
 
@@ -317,19 +336,32 @@ async function handleBrowserDom(req, res) {
 
   const { state } = pipeline;
 
-  if (state === 'GMAIL_DOM_PENDING') {
+  if (state === 'GMAIL_EMAIL_DOM_PENDING') {
     pipeline.state = 'EMAIL_PARSING';
     json(res, 200, { ok: true });
     try {
       const properties = await parseEmail(body.dom || '');
-      pipelineLog(`Email parsed: ${properties.length} particulares found`);
-      pipeline.properties = properties;
-      pipeline.currentIdx = 0;
-      pipeline.results = [];
-      startNextProperty();
+      pipelineLog(`Email ${pipeline.emailIdx + 1}/${pipeline.emailUrls.length}: ${properties.length} particulares found`);
+      pipeline.properties.push(...properties);
     } catch (err) {
-      pipelineLog(`parseEmail error: ${err.message}`);
-      pipeline.state = 'DONE';
+      pipelineLog(`parseEmail error on email ${pipeline.emailIdx + 1}: ${err.message}`);
+    }
+    pipeline.emailIdx++;
+    if (pipeline.emailIdx < pipeline.emailUrls.length) {
+      pipeline.taskId = nextTaskId();
+      pipeline.state = 'GMAIL_EMAIL_NAVIGATE';
+      pipelineLog(`Opening email ${pipeline.emailIdx + 1}/${pipeline.emailUrls.length}`);
+    } else {
+      // Deduplicate properties by URL across emails
+      const seen = new Set();
+      pipeline.properties = pipeline.properties.filter(p => {
+        if (seen.has(p.url)) return false;
+        seen.add(p.url);
+        return true;
+      });
+      pipelineLog(`All emails parsed. ${pipeline.properties.length} unique properties total`);
+      pipeline.currentIdx = 0;
+      startNextProperty();
     }
     return;
   }
@@ -394,11 +426,30 @@ async function handleBrowserActionDone(req, res) {
 
   if (state === 'GMAIL_NAVIGATE_WAITING' && body.action === 'navigate') {
     if (body.ok) {
-      pipeline.state = 'GMAIL_DOM_PENDING';
-      pipelineLog('Gmail loaded — requesting DOM');
+      pipeline.state = 'GMAIL_LINKS_PENDING';
+      pipelineLog('Gmail search loaded — extracting email links');
     } else {
-      pipelineLog(`Gmail navigation failed: ${body.error}`);
+      pipelineLog(`Gmail search navigation failed: ${body.error}`);
       pipeline.state = 'DONE';
+    }
+    return;
+  }
+
+  if (state === 'GMAIL_EMAIL_NAVIGATE_WAITING' && body.action === 'navigate') {
+    if (body.ok) {
+      pipeline.state = 'GMAIL_EMAIL_DOM_PENDING';
+      pipelineLog(`Email ${pipeline.emailIdx + 1}/${pipeline.emailUrls.length} loaded — extracting DOM`);
+    } else {
+      pipelineLog(`Email ${pipeline.emailIdx + 1} navigation failed: ${body.error} — skipping`);
+      pipeline.emailIdx++;
+      if (pipeline.emailIdx < pipeline.emailUrls.length) {
+        pipeline.taskId = nextTaskId();
+        pipeline.state = 'GMAIL_EMAIL_NAVIGATE';
+      } else {
+        pipelineLog(`All emails processed. ${pipeline.properties.length} properties total`);
+        pipeline.currentIdx = 0;
+        startNextProperty();
+      }
     }
     return;
   }
@@ -439,6 +490,30 @@ async function handleBrowserActionDone(req, res) {
   }
 }
 
+async function handleBrowserLinks(req, res) {
+  let body;
+  try { body = await readBody(req); } catch { return json(res, 400, { error: 'Invalid JSON' }); }
+
+  json(res, 200, { ok: true });
+
+  if (pipeline.state !== 'GMAIL_LINKS_PENDING') return;
+
+  const links = body.links || [];
+  pipelineLog(`Got ${links.length} BetterPlace email(s) from Gmail search`);
+
+  if (links.length === 0) {
+    pipelineLog('No BetterPlace emails found today — done');
+    pipeline.state = 'DONE';
+    return;
+  }
+
+  pipeline.emailUrls = links;
+  pipeline.emailIdx = 0;
+  pipeline.taskId = nextTaskId();
+  pipeline.state = 'GMAIL_EMAIL_NAVIGATE';
+  pipelineLog(`Opening email 1/${links.length}`);
+}
+
 async function handleRunBetterplace(_req, res) {
   if (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') {
     return json(res, 409, { error: 'Pipeline already running', state: pipeline.state });
@@ -468,10 +543,12 @@ async function handleRunBetterplace(_req, res) {
     }
   } catch { /* proceed anyway */ }
 
-  // Reset pipeline and navigate to Gmail
+  // Reset pipeline and navigate to Gmail search
   pipeline = {
     state: 'GMAIL_NAVIGATE',
     taskId: nextTaskId(),
+    emailUrls: [],
+    emailIdx: 0,
     properties: [],
     currentIdx: 0,
     currentProperty: null,
@@ -907,6 +984,7 @@ const routes = {
   // BetterPlace pipeline (Chrome extension)
   'GET /browser/next-task': handleBrowserNextTask,
   'POST /browser/dom': handleBrowserDom,
+  'POST /browser/links': handleBrowserLinks,
   'POST /browser/action-done': handleBrowserActionDone,
   'POST /api/run-betterplace': handleRunBetterplace,
   'POST /api/run-direct': handleRunDirect,

@@ -56,16 +56,47 @@ fi
 
 MODE="${1:-}"
 
-if [[ -z "$MODE" ]]; then
-  echo "Uso:"
-  echo "  ./run.sh test [+34XXXXXXXXX]  Prueba completa (Gmail→Chrome→WhatsApp a tel de test)"
-  echo "  ./run.sh dashboard [--dry-run] Dashboard web en http://localhost:3456"
-  echo "  ./run.sh api [--dry-run]      Buscar via API Idealista"
-  echo "  ./run.sh email <archivo.eml>  Procesar email de BetterPlace"
-  echo "  cat email.eml | ./run.sh email"
-  echo "  ./run.sh server [--dry-run]   Servidor HTTP puente (Chrome ext ↔ wacli)"
-  echo "  ./run.sh betterplace          Desatendido: Gmail → Chrome → WhatsApp"
-  exit 1
+if [[ "$MODE" == "--version" || "$MODE" == "-v" || "$MODE" == "version" ]]; then
+  VERSION=$(node -p "require('$DIR/package.json').version" 2>/dev/null || grep '"version"' "$DIR/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+  echo "prophunt v${VERSION:-?}"
+  exit 0
+fi
+
+if [[ -z "$MODE" || "$MODE" == "--help" || "$MODE" == "-h" || "$MODE" == "help" ]]; then
+  echo ""
+  echo "  ai-prophunt — captación inmobiliaria automatizada"
+  echo ""
+  echo "  Uso: ./run.sh <comando> [opciones]"
+  echo ""
+  echo "  Comandos:"
+  echo ""
+  echo "    betterplace              Flujo completo desatendido: abre Gmail, parsea el"
+  echo "                             email de BetterPlace, navega cada anuncio en Chrome,"
+  echo "                             extrae el teléfono y envía WhatsApp."
+  echo ""
+  echo "    server [--dry-run]       Lanza el servidor HTTP (puerto 3456) que hace de"
+  echo "                             puente entre la extensión Chrome y wacli."
+  echo "                             Con --dry-run simula envíos sin usar WhatsApp."
+  echo ""
+  echo "    dashboard [--dry-run]    Igual que server pero abre el dashboard web"
+  echo "                             en http://localhost:3456 al arrancar."
+  echo ""
+  echo "    api [--dry-run]          Busca inmuebles de particulares via API de Idealista"
+  echo "                             y procesa los resultados con Claude."
+  echo "                             Con --dry-run no envía WhatsApp."
+  echo ""
+  echo "    email <archivo.eml>      Procesa un email de BetterPlace desde fichero."
+  echo "    cat email.eml | ./run.sh email"
+  echo "                             También acepta el email por stdin."
+  echo ""
+  echo "    test [+34XXXXXXXXX]      Prueba completa del pipeline: Gmail → Chrome →"
+  echo "                             WhatsApp. Si se pasa un teléfono, el mensaje de"
+  echo "                             prueba se envía a ese número."
+  echo ""
+  echo "  Opciones globales:"
+  echo "    -h, --help               Muestra esta ayuda."
+  echo ""
+  [[ -z "$MODE" ]] && exit 1 || exit 0
 fi
 
 # ═══════════════════════════════════════════
