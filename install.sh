@@ -331,6 +331,7 @@ EOF
       unzip -q -o "$EXT_ZIP" -d "$INSTALL_DIR/chrome-extension"; rm -f "$EXT_ZIP"; echo "Extension actualizada"
     fi
     curl -fL "$RELEASES_URL/run.sh" -o "$INSTALL_DIR/run.sh" 2>/dev/null && chmod +x "$INSTALL_DIR/run.sh" && echo "run.sh actualizado" || true
+    curl -fL "$RELEASES_URL/version.json" -o "$INSTALL_DIR/version.json" 2>/dev/null || true
     # Self-update CLI
     curl -fL "$RELEASES_URL/install.sh" -o /tmp/prophunt-install-check.sh 2>/dev/null
     if [[ -s /tmp/prophunt-install-check.sh ]]; then
@@ -344,12 +345,12 @@ EOF
       fi
       rm -f /tmp/prophunt-install-check.sh
     fi
-    VERSION=$(node -p "require('$INSTALL_DIR/package.json').version" 2>/dev/null || grep '"version"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+    VERSION=$(cat "$INSTALL_DIR/version.json" 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
     echo "Hecho. Ejecuta: prophunt stop && prophunt start"
     echo "Version instalada: v${VERSION:-?}"
     ;;
   --version|-v|version)
-    VERSION=$(node -p "require('$INSTALL_DIR/package.json').version" 2>/dev/null || grep '"version"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+    VERSION=$(cat "$INSTALL_DIR/version.json" 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
     echo "prophunt v${VERSION:-?}"
     ;;
   uninstall)

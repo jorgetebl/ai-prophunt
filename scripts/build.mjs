@@ -48,7 +48,7 @@ console.log('Step 3/4 — Creating launcher script...');
 const launcher = `#!/bin/bash
 exec node "$(dirname "$0")/server.bundle.cjs" "$@"
 `;
-import { writeFileSync, chmodSync, existsSync, copyFileSync } from 'node:fs';
+import { writeFileSync, chmodSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 writeFileSync(join(DIST, 'prophunt-server'), launcher);
 chmodSync(join(DIST, 'prophunt-server'), 0o755);
 
@@ -79,6 +79,9 @@ const whatsappTpl = join(ROOT, 'templates', 'whatsapp.txt');
 if (existsSync(whatsappTpl)) {
   copyFileSync(whatsappTpl, join(LANDING_RELEASES, 'whatsapp.txt'));
 }
+// Write version.json so clients can read the version without package.json
+const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'));
+writeFileSync(join(LANDING_RELEASES, 'version.json'), JSON.stringify({ version: pkg.version }));
 console.log('Step 5/5 — Release assets copied to landing/releases/');
 
 console.log('\nBuild complete:');
