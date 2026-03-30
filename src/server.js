@@ -581,49 +581,40 @@ async function handleRunBetterplace(_req, res) {
 }
 
 async function fetchEmailsWithGog() {
-  // Search for BetterPlace emails from today
+  // Search for BetterPlace emails from today — gog returns tabular output (not JSON)
+  // Format: ID  DATE  FROM  SUBJECT  LABELS  THREAD
   let searchOutput;
   try {
     searchOutput = execSync(
-      `gog gmail search 'from:alertas@betterplaceapp.com newer_than:1d' --json`,
+      `gog gmail search 'from:alertas@betterplaceapp.com newer_than:1d'`,
       { encoding: 'utf-8', timeout: 30000 }
     );
   } catch (err) {
     throw new Error(`gog gmail search failed: ${err.message}`);
   }
 
-  let threads;
-  try {
-    threads = JSON.parse(searchOutput);
-  } catch {
-    throw new Error(`gog gmail search returned invalid JSON: ${searchOutput.slice(0, 200)}`);
-  }
+  // Parse IDs from tabular output (skip header line, take first column)
+  const ids = searchOutput.trim().split('\n')
+    .slice(1) // skip header row
+    .map(line => line.trim().split(/\s+/)[0])
+    .filter(id => id && /^[0-9a-f]{16,}$/i.test(id));
 
-  if (!Array.isArray(threads) || threads.length === 0) {
+  if (ids.length === 0) {
     pipelineLog('gogcli: no BetterPlace emails found today — done');
     pipeline.state = 'DONE';
     return;
   }
 
-  pipelineLog(`gogcli: found ${threads.length} BetterPlace email(s)`);
+  pipelineLog(`gogcli: found ${ids.length} BetterPlace email(s)`);
 
   const allProperties = [];
-  for (const thread of threads) {
-    const id = thread.id || thread.threadId || thread.messageId;
-    if (!id) continue;
+  for (const id of ids) {
     try {
       const msgOutput = execSync(
-        `gog gmail messages get ${id} --format text --json`,
+        `gog gmail messages get ${id}`,
         { encoding: 'utf-8', timeout: 15000 }
       );
-      let body = '';
-      try {
-        const msg = JSON.parse(msgOutput);
-        body = msg.body || msg.snippet || msg.text || msgOutput;
-      } catch {
-        body = msgOutput;
-      }
-      const properties = await parseEmail(body);
+      const properties = await parseEmail(msgOutput);
       pipelineLog(`gogcli email ${id}: ${properties.length} particulares found`);
       allProperties.push(...properties);
     } catch (err) {
