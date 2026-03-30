@@ -286,7 +286,7 @@ function handleBrowserNextTask(_req, res) {
 
   if (state === 'GMAIL_NAVIGATE') {
     pipeline.state = 'GMAIL_NAVIGATE_WAITING';
-    return json(res, 200, { type: 'navigate', url: 'https://mail.google.com/#search/from:betterplace+newer_than:1d', taskId });
+    return json(res, 200, { type: 'navigate', url: 'https://mail.google.com/#search/from:alertas@betterplaceapp.com+newer_than:1d', taskId });
   }
 
   if (state === 'GMAIL_NAVIGATE_WAITING') {
@@ -585,7 +585,7 @@ async function fetchEmailsWithGog() {
   let searchOutput;
   try {
     searchOutput = execSync(
-      `gog gmail search 'from:betterplace newer_than:1d' --json`,
+      `gog gmail search 'from:alertas@betterplaceapp.com newer_than:1d' --json`,
       { encoding: 'utf-8', timeout: 30000 }
     );
   } catch (err) {
