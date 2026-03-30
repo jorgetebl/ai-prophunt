@@ -334,7 +334,7 @@ EOF
     # Self-update CLI
     curl -fL "$RELEASES_URL/install.sh" -o /tmp/prophunt-install-check.sh 2>/dev/null
     if [[ -s /tmp/prophunt-install-check.sh ]]; then
-      sed -n '/^cat > \/tmp\/prophunt-cli/,/^CLIFEOF$/{/^cat > \/tmp\/prophunt-cli/d;/^CLIFEOF$/d;p}' \
+      awk '/^cat > \/tmp\/prophunt-cli/{found=1;next} /^CLIFEOF$/{found=0;next} found{print}' \
         /tmp/prophunt-install-check.sh > /tmp/prophunt-cli
       if [[ -s /tmp/prophunt-cli ]]; then
         chmod +x /tmp/prophunt-cli
