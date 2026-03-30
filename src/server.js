@@ -1440,10 +1440,9 @@ function startAutoUpdate() {
         const installSh = '/tmp/prophunt-install-update.sh';
         execSync(`curl -fL "${releasesUrl}/install.sh" -o "${installSh}" 2>/dev/null`, { timeout: 15000 });
         if (existsSync(installSh)) {
-          const cliBlock = execSync(`sed -n '/^cat > \\/tmp\\/prophunt-cli/,/^CLIFEOF$/p' "${installSh}"`, { encoding: 'utf-8', timeout: 5000 });
-          if (cliBlock.trim()) {
-            execSync(`bash -c '${cliBlock.replace(/'/g, "'\\''")}'`, { timeout: 5000 });
-            // Find CLI path
+          execSync(`sed -n '/^cat > \\/tmp\\/prophunt-cli/,/^CLIFEOF$/{/^cat > \\/tmp\\/prophunt-cli/d;/^CLIFEOF$/d;p}' "${installSh}" > /tmp/prophunt-cli`, { timeout: 5000 });
+          execSync('chmod +x /tmp/prophunt-cli', { timeout: 3000 });
+          if (existsSync('/tmp/prophunt-cli')) {
             try {
               const cliPath = execSync('command -v prophunt', { encoding: 'utf-8', timeout: 3000 }).trim();
               if (cliPath) {
