@@ -76,18 +76,30 @@ async function parseEmail(text) {
   const truncated = text.slice(0, 12000);
   const msg = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 1024,
+    max_tokens: 2048,
     messages: [{
       role: 'user',
-      content: `Eres un parser de emails inmobiliarios. Analiza este email de BetterPlace y extrae los inmuebles.
+      content: `Eres un parser de emails inmobiliarios. Analiza este email de BetterPlace (puede ser texto plano o HTML) y extrae los inmuebles de PARTICULARES.
 
-Cada bloque tiene formato:
+El email puede tener dos formatos:
+
+FORMATO TEXTO PLANO:
 [Título/zona]
 [Precio] € | [m²] | [habs]
-Particular en [portal]  ← o "Agencia en ..." si es agencia
+Particular en [portal]
 [Links: Valoración, Tarea, Informe de captación, Ficha del inmueble]
 
-Devuelve SOLO un JSON array con los inmuebles de PARTICULARES (ignora agencias). Formato:
+FORMATO HTML:
+- Cada inmueble aparece como un bloque con título, precio, tipo de vendedor y links
+- Los links pueden ser directos (idealista.com, fotocasa.es, pisos.com) o redirects de BetterPlace (click.betterplaceapp.com)
+- Busca si dice "Particular" (no "Agencia") cerca de cada inmueble
+- El link de "Ficha del inmueble" o el link al portal es la URL que necesitas
+
+IMPORTANTE sobre los links:
+- Si el link es directo al portal (idealista.com, fotocasa.es, pisos.com, habitaclia.com) → úsalo tal cual
+- Si el link es un redirect de BetterPlace (click.betterplaceapp.com o similar) → úsalo también, es válido
+
+Devuelve SOLO un JSON array con los inmuebles de PARTICULARES. Formato:
 [
   {
     "url": "https://...",
