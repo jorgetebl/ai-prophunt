@@ -8,7 +8,7 @@ import { log } from './logger.js';
 import { normalizePhone, isValidMobile } from './phone.js';
 import { loadContacted, getTodayContactCount } from './filter.js';
 import { createQueue } from './queue.js';
-import { isConfigured, getUserId, getContacts, addContact, getLogs as sbGetLogs, getConfig as sbGetConfig, init as initSupabase } from './supabase.js';
+import { isConfigured, getUserId, getContacts, addContact, getLogs as sbGetLogs, getConfig as sbGetConfig, init as initSupabase, reportVersion } from './supabase.js';
 import { parseEmail, extractPhone, extractDetails, buildMessage as claudeBuildMessage, setAccessToken } from './claude.js';
 
 const CONFIG_PATH = join(import.meta.dirname, '..', 'config.json');
@@ -543,9 +543,9 @@ async function handleRunBetterplace(_req, res) {
     }
   } catch { /* proceed anyway */ }
 
-  // Reset pipeline and navigate to Gmail search
+  // Reset pipeline
   pipeline = {
-    state: 'GMAIL_NAVIGATE',
+    state: 'IDLE',
     taskId: nextTaskId(),
     emailUrls: [],
     emailIdx: 0,
@@ -557,8 +557,91 @@ async function handleRunBetterplace(_req, res) {
     _pendingClickHint: null,
   };
 
-  pipelineLog('Pipeline started — navigating to Gmail');
   json(res, 200, { ok: true, message: 'Pipeline started' });
+
+  // Try gogcli first — if available, read Gmail directly without Chrome extension
+  try {
+    const gogPath = execSync('command -v gog', { encoding: 'utf-8', timeout: 3000 }).trim();
+    if (gogPath) {
+      pipelineLog('Pipeline started — fetching emails via gogcli');
+      setImmediate(() => fetchEmailsWithGog().catch(err => {
+        pipelineLog(`gogcli failed (${err.message}) — falling back to Chrome extension`);
+        pipeline.state = 'GMAIL_NAVIGATE';
+        pipeline.taskId = nextTaskId();
+        pipelineLog('Pipeline started — navigating to Gmail via Chrome');
+      }));
+      return;
+    }
+  } catch { /* gogcli not installed, fall through */ }
+
+  // Fallback: Chrome extension navigates to Gmail
+  pipeline.state = 'GMAIL_NAVIGATE';
+  pipeline.taskId = nextTaskId();
+  pipelineLog('Pipeline started — navigating to Gmail via Chrome');
+}
+
+async function fetchEmailsWithGog() {
+  // Search for BetterPlace emails from today
+  let searchOutput;
+  try {
+    searchOutput = execSync(
+      `gog gmail search 'from:betterplace newer_than:1d' --json`,
+      { encoding: 'utf-8', timeout: 30000 }
+    );
+  } catch (err) {
+    throw new Error(`gog gmail search failed: ${err.message}`);
+  }
+
+  let threads;
+  try {
+    threads = JSON.parse(searchOutput);
+  } catch {
+    throw new Error(`gog gmail search returned invalid JSON: ${searchOutput.slice(0, 200)}`);
+  }
+
+  if (!Array.isArray(threads) || threads.length === 0) {
+    pipelineLog('gogcli: no BetterPlace emails found today — done');
+    pipeline.state = 'DONE';
+    return;
+  }
+
+  pipelineLog(`gogcli: found ${threads.length} BetterPlace email(s)`);
+
+  const allProperties = [];
+  for (const thread of threads) {
+    const id = thread.id || thread.threadId || thread.messageId;
+    if (!id) continue;
+    try {
+      const msgOutput = execSync(
+        `gog gmail messages get ${id} --format text --json`,
+        { encoding: 'utf-8', timeout: 15000 }
+      );
+      let body = '';
+      try {
+        const msg = JSON.parse(msgOutput);
+        body = msg.body || msg.snippet || msg.text || msgOutput;
+      } catch {
+        body = msgOutput;
+      }
+      const properties = await parseEmail(body);
+      pipelineLog(`gogcli email ${id}: ${properties.length} particulares found`);
+      allProperties.push(...properties);
+    } catch (err) {
+      pipelineLog(`gogcli: error reading email ${id}: ${err.message}`);
+    }
+  }
+
+  // Deduplicate by URL
+  const seen = new Set();
+  pipeline.properties = allProperties.filter(p => {
+    if (seen.has(p.url)) return false;
+    seen.add(p.url);
+    return true;
+  });
+
+  pipelineLog(`gogcli: ${pipeline.properties.length} unique properties to process`);
+  pipeline.currentIdx = 0;
+  startNextProperty();
 }
 
 // --- Direct URL pipeline (skip Gmail, go straight to property) ---
@@ -1057,6 +1140,10 @@ async function start() {
     if (ready) {
       const uid = await getUserId();
       log(`Server: Supabase connected (user: ${uid})`);
+      try {
+        const pkg = JSON.parse(readFileSync(join(PROJECT_ROOT, 'package.json'), 'utf-8'));
+        await reportVersion(uid, pkg.version);
+      } catch (_) {}
 
       // Login to get JWT for Claude proxy
       const email = process.env.PROPHUNT_EMAIL;

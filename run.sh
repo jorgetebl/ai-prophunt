@@ -186,8 +186,27 @@ if [[ "$MODE" == "test" ]]; then
     fi
   else
     echo "  FAIL  wacli no instalado" | tee -a "$LOG"
-    echo "         Instalar: brew install steipete/tap/wacli" | tee -a "$LOG"
-    PREFLIGHT_OK=false
+    echo "         Instalando wacli..." | tee -a "$LOG"
+    if brew install steipete/tap/wacli 2>&1 | tail -1 | tee -a "$LOG"; then
+      echo "  OK    wacli instalado" | tee -a "$LOG"
+    else
+      echo "         Instalar manualmente: brew install steipete/tap/wacli" | tee -a "$LOG"
+      PREFLIGHT_OK=false
+    fi
+  fi
+
+  # 6. gogcli (Google CLI para acceso a Gmail)
+  if command -v gogcli &>/dev/null; then
+    echo "  OK    gogcli instalado" | tee -a "$LOG"
+  else
+    echo "  FAIL  gogcli no instalado" | tee -a "$LOG"
+    echo "         Instalando gogcli..." | tee -a "$LOG"
+    if brew install steipete/tap/gogcli 2>&1 | tail -1 | tee -a "$LOG"; then
+      echo "  OK    gogcli instalado" | tee -a "$LOG"
+    else
+      echo "         Instalar manualmente: brew install steipete/tap/gogcli" | tee -a "$LOG"
+      PREFLIGHT_OK=false
+    fi
   fi
 
   echo "" | tee -a "$LOG"
