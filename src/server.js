@@ -611,7 +611,7 @@ async function fetchEmailsWithGog() {
   for (const id of ids) {
     try {
       const msgOutput = execSync(
-        `gog gmail messages get ${id}`,
+        `gog gmail get ${id}`,
         { encoding: 'utf-8', timeout: 15000 }
       );
       const properties = await parseEmail(msgOutput);
