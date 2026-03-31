@@ -141,6 +141,16 @@ export async function getLogs(userId, date) {
   return data || [];
 }
 
+// --- Version reporting ---
+
+export async function reportVersion(userId, version) {
+  const sb = getSupabase();
+  if (!sb || !userId || !version) return;
+  await sb.from('subscriptions')
+    .update({ client_version: version, last_seen: new Date().toISOString() })
+    .eq('user_id', userId);
+}
+
 // --- Config ---
 
 export async function getConfig(userId) {

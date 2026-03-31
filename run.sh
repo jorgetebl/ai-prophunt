@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-DIR="$(cd "$(dirname "$0")" && pwd)"
+DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")" && pwd)"
 cd "$DIR"
 
 # Si node no está en el PATH, usar la ruta guardada por el instalador
@@ -67,34 +67,36 @@ if [[ -z "$MODE" || "$MODE" == "--help" || "$MODE" == "-h" || "$MODE" == "help" 
   echo "  ai-prophunt — captación inmobiliaria automatizada"
   echo ""
   echo "  Uso: ./run.sh <comando> [opciones]"
+  echo "       prophunt <comando> [opciones]   (si está instalado en PATH)"
   echo ""
-  echo "  Comandos:"
+  echo "  Comandos principales:"
   echo ""
-  echo "    betterplace              Flujo completo desatendido: abre Gmail, parsea el"
-  echo "                             email de BetterPlace, navega cada anuncio en Chrome,"
-  echo "                             extrae el teléfono y envía WhatsApp."
+  echo "    run [--dry-run]          Ejecuta el pipeline UNA VEZ ahora mismo:"
+  echo "                             busca email de BetterPlace de hoy → navega"
+  echo "                             cada anuncio en Chrome → extrae teléfono →"
+  echo "                             envía WhatsApp. Ideal para pruebas manuales"
+  echo "                             o cuando el ordenador estuvo apagado."
   echo ""
-  echo "    server [--dry-run]       Lanza el servidor HTTP (puerto 3456) que hace de"
-  echo "                             puente entre la extensión Chrome y wacli."
+  echo "    start [--dry-run]        Arranca el servidor en modo daemon (se queda"
+  echo "                             corriendo). Ejecuta automáticamente a las 9:00"
+  echo "                             de lunes a viernes, y también cuando detecta"
+  echo "                             un email nuevo de alertas@betterplaceapp.com."
   echo "                             Con --dry-run simula envíos sin usar WhatsApp."
   echo ""
-  echo "    dashboard [--dry-run]    Igual que server pero abre el dashboard web"
+  echo "    test [+34XXXXXXXXX]      Prueba completa: Gmail → Chrome → WhatsApp."
+  echo "                             Pasa un teléfono para enviar el mensaje de prueba."
+  echo ""
+  echo "    dashboard [--dry-run]    Igual que start pero abre el dashboard web"
   echo "                             en http://localhost:3456 al arrancar."
   echo ""
-  echo "    api [--dry-run]          Busca inmuebles de particulares via API de Idealista"
-  echo "                             y procesa los resultados con Claude."
-  echo "                             Con --dry-run no envía WhatsApp."
-  echo ""
-  echo "    email <archivo.eml>      Procesa un email de BetterPlace desde fichero."
-  echo "    cat email.eml | ./run.sh email"
-  echo "                             También acepta el email por stdin."
-  echo ""
-  echo "    test [+34XXXXXXXXX]      Prueba completa del pipeline: Gmail → Chrome →"
-  echo "                             WhatsApp. Si se pasa un teléfono, el mensaje de"
-  echo "                             prueba se envía a ese número."
+  echo "  Instalar comando 'prophunt':"
+  echo "    sudo ln -sf \$PWD/run.sh /usr/local/bin/prophunt"
+  echo "    prophunt run    # ejecutar una vez"
+  echo "    prophunt start  # arrancar daemon"
   echo ""
   echo "  Opciones globales:"
   echo "    -h, --help               Muestra esta ayuda."
+  echo "    --version                Muestra la versión."
   echo ""
   [[ -z "$MODE" ]] && exit 1 || exit 0
 fi
@@ -221,254 +223,108 @@ if [[ "$MODE" == "test" ]]; then
 
   echo "Todo OK." | tee -a "$LOG"
   echo "" | tee -a "$LOG"
-  echo "IMPORTANTE: Asegurate de que en Chrome:" | tee -a "$LOG"
-  echo "  1. La extension de Claude esta activa (icono Claude en la barra de extensiones)" | tee -a "$LOG"
-  echo "  2. Gmail esta abierto en una pestana con al menos un email de Idealista" | tee -a "$LOG"
-  echo "" | tee -a "$LOG"
-  read -p "Pulsa Enter cuando este listo para continuar..."
-  echo "" | tee -a "$LOG"
-  echo "Lanzando test..." | tee -a "$LOG"
+  echo "IMPORTANTE: Chrome debe tener la extension AI PropHunt activa." | tee -a "$LOG"
   echo "" | tee -a "$LOG"
 
-  # Leer plantilla de WhatsApp
-  WHATSAPP_TEMPLATE=""
-  if [[ -f "$DIR/templates/whatsapp.txt" ]]; then
-    WHATSAPP_TEMPLATE=$(cat "$DIR/templates/whatsapp.txt")
-  fi
+  # ── Teléfono de prueba ──────────────────────────────────────────────────────
+  DEFAULT_TEST_PHONE="${2:-34619458478}"
+  DEFAULT_TEST_PHONE="${DEFAULT_TEST_PHONE#+}"
+  [[ ! "$DEFAULT_TEST_PHONE" == 34* ]] && DEFAULT_TEST_PHONE="34$DEFAULT_TEST_PHONE"
 
-  # Temp files for Claude to write results
-  TEST_MSG_FILE="/tmp/prophunt_test_message.txt"
-  TEST_DATA_FILE="/tmp/prophunt_test_data.json"
-  rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
-
-  # Write prompt to temp file to avoid quoting issues
-  PROMPT_FILE=$(mktemp /tmp/prophunt_test_prompt.XXXXXX)
-  cat > "$PROMPT_FILE" <<PROMPT_EOF
-Eres un agente de captacion inmobiliaria automatizado para Juanan Gomis (REMAX Experience, Palma de Mallorca).
-
-MODO TEST: Vas a hacer el ciclo completo de captacion PERO SIN ENVIAR el WhatsApp. Solo preparas todo y guardas el resultado en archivos temporales.
-
-PASO 1: BUSCAR EMAIL DE IDEALISTA EN GMAIL
-- Usa tabs_context_mcp para obtener las pestanas abiertas en Chrome
-- Gmail ya deberia estar abierto. Encuentralo
-- Busca: from:idealista (o similar, un email reciente con un link a un inmueble)
-- Si no hay ningun email de Idealista, busca cualquier email que contenga un link a idealista.com
-- Abre el email mas reciente que tenga un link a idealista
-
-PASO 2: ABRIR EL INMUEBLE
-- Del email, extrae el link a idealista.com
-- Abre ese link en una nueva pestana
-- Espera a que cargue completamente
-
-PASO 3: LEER LA FICHA DEL INMUEBLE
-- Lee TODOS los detalles de la ficha:
-  - Direccion / zona
-  - Precio
-  - Metros cuadrados
-  - Numero de habitaciones y banos
-  - Planta
-  - Caracteristicas destacadas (terraza, ascensor, reformado, vistas, garaje, etc.)
-  - Tipo de inmueble (piso, casa, atico, duplex, etc.)
-  - Nombre del anunciante si aparece
-- Registra todos estos datos, los necesitas para personalizar el mensaje
-
-PASO 4: VER EL TELEFONO (solo para verificar que funciona)
-- Busca el boton Ver telefono o Contactar y haz click
-- Extrae el numero que aparece
-- Registra el numero REAL en los datos
-
-PASO 5: CONSTRUIR MENSAJE PERSONALIZADO
-- Usa la plantilla base:
-$WHATSAPP_TEMPLATE
-
-- Reemplaza los campos:
-  - {{nombre}} -> nombre del anunciante si lo hay, si no quitar esa parte (cambiar Hola nombre soy por Hola soy)
-  - {{tipo}} -> tipo de inmueble (piso, casa, atico, etc.)
-  - {{zona}} -> direccion o zona del inmueble
-  - {{portal}} -> idealista
-  - {{precio}} -> precio formateado (ej: 350.000 euros)
-  - {{detalle}} -> genera UNA frase natural y corta (max 20 palabras) mencionando algo especifico y positivo de la ficha. Ejemplos:
-    Los 85 m2 con terraza y esas vistas al parque tienen muy buena pinta
-    Un atico de 3 habitaciones con esa orientacion sur es dificil de encontrar
-    La reforma reciente y la ubicacion junto al centro lo hacen muy atractivo
-    NO seas generico. Menciona algo CONCRETO de la ficha.
-
-PASO 6: GUARDAR RESULTADOS (NO ENVIAR WHATSAPP)
-- Guarda el mensaje construido en $TEST_MSG_FILE (solo el texto del mensaje, nada mas)
-- Guarda los datos del inmueble en $TEST_DATA_FILE como JSON:
-  {"name": "nombre o null", "url": "url", "portal": "idealista", "zone": "zona", "price": precio, "phone_real": "telefono extraido de la ficha"}
-
-NO envies ningun WhatsApp. Solo guarda los archivos.
-
-Directorio de trabajo: $DIR
-PROMPT_EOF
-
-  # Ask user: betterplace (Gmail) or direct URL?
-  echo "Como quieres probar?" | tee -a "$LOG"
-  echo "  1) BetterPlace (buscar email de Idealista en Gmail)" | tee -a "$LOG"
-  echo "  2) URL directa de un anuncio de Idealista" | tee -a "$LOG"
+  read -p "Teléfono al que enviar el WhatsApp de prueba (Enter = $DEFAULT_TEST_PHONE): " TEST_PHONE
+  TEST_PHONE="${TEST_PHONE:-$DEFAULT_TEST_PHONE}"
+  TEST_PHONE="${TEST_PHONE#+}"
+  [[ ! "$TEST_PHONE" == 34* ]] && TEST_PHONE="34$TEST_PHONE"
+  echo "WhatsApp de prueba se enviará a: $TEST_PHONE" | tee -a "$LOG"
   echo "" | tee -a "$LOG"
-  read -p "Opcion (1 o 2): " TEST_OPTION
+
+  # ── Modo del test ───────────────────────────────────────────────────────────
+  echo "¿Qué quieres probar?" | tee -a "$LOG"
+  echo "  1) BetterPlace: busca email en Gmail → abre inmueble → extrae teléfono → WhatsApp" | tee -a "$LOG"
+  echo "  2) URL directa: pega la URL de un anuncio y prueba el ciclo completo" | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
+  read -p "Opción (1 o 2, Enter = 1): " TEST_OPTION
   TEST_OPTION="${TEST_OPTION:-1}"
-
-  # Phone override for test mode
-  TEST_PHONE_OVERRIDE="${2:-34619458478}"
-  TEST_PHONE_OVERRIDE="${TEST_PHONE_OVERRIDE#+}"
-  if [[ ! "$TEST_PHONE_OVERRIDE" == 34* ]]; then
-    TEST_PHONE_OVERRIDE="34$TEST_PHONE_OVERRIDE"
-  fi
-
-  echo "Lanzando servidor y pipeline de test..." | tee -a "$LOG"
 
   SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
 
-  # Kill any existing server on this port
+  # Matar servidor previo en este puerto si hubiera uno
   lsof -ti:$SERVER_PORT 2>/dev/null | xargs kill 2>/dev/null || true
   sleep 1
 
-  # Launch server in background for test
+  # Lanzar servidor en background para el test
+  echo "" | tee -a "$LOG"
+  echo "Lanzando servidor de test en puerto $SERVER_PORT..." | tee -a "$LOG"
   $SERVER_CMD &
   TEST_SERVER_PID=$!
-  sleep 3
+  for i in $(seq 1 15); do
+    if curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
 
+  if ! curl -s "http://127.0.0.1:$SERVER_PORT/health" >/dev/null 2>&1; then
+    echo "ERROR: El servidor no arrancó en 15 segundos. Revisa los logs." | tee -a "$LOG"
+    echo "Pulsa Enter para cerrar"; read
+    exit 1
+  fi
+  echo "Servidor listo. Esperando extensión Chrome (4s)..." | tee -a "$LOG"
+  sleep 4
+
+  # ── Lanzar pipeline ─────────────────────────────────────────────────────────
   if [[ "$TEST_OPTION" == "2" ]]; then
-    # Direct URL mode
-    read -p "Pega la URL del anuncio de Idealista: " DIRECT_URL
-    if [[ -z "$DIRECT_URL" ]]; then
-      DIRECT_URL="https://www.idealista.com/inmueble/88686391/"
-    fi
+    read -p "URL del anuncio (Enter = https://www.idealista.com/inmueble/88686391/): " DIRECT_URL
+    DIRECT_URL="${DIRECT_URL:-https://www.idealista.com/inmueble/88686391/}"
     echo "Navegando a: $DIRECT_URL" | tee -a "$LOG"
-    echo "Telefono de test: $TEST_PHONE_OVERRIDE" | tee -a "$LOG"
+    echo "Teléfono de test: $TEST_PHONE" | tee -a "$LOG"
     curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-direct" \
       -H "Content-Type: application/json" \
-      -d "{\"url\": \"$DIRECT_URL\", \"portal\": \"idealista\", \"phone_override\": \"$TEST_PHONE_OVERRIDE\"}" | tee -a "$LOG"
+      -d "{\"url\": \"$DIRECT_URL\", \"portal\": \"idealista\", \"phone_override\": \"$TEST_PHONE\"}" | tee -a "$LOG"
     echo "" | tee -a "$LOG"
   else
-    # BetterPlace (Gmail) mode
-    curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-betterplace" >/dev/null 2>&1
+    echo "Iniciando pipeline BetterPlace con teléfono de prueba..." | tee -a "$LOG"
+    curl -s -X POST "http://127.0.0.1:$SERVER_PORT/api/run-betterplace" \
+      -H "Content-Type: application/json" \
+      -d "{\"phone_override\": \"$TEST_PHONE\"}" | tee -a "$LOG"
+    echo "" | tee -a "$LOG"
   fi
 
-  # Wait up to 5 min for pipeline to finish (use /pipeline/status, NOT /browser/next-task)
-  for i in $(seq 1 60); do
+  # ── Esperar a que el pipeline y la cola terminen (máx 10 min) ───────────────
+  echo "Esperando resultados..." | tee -a "$LOG"
+  for i in $(seq 1 120); do
     sleep 5
     STATUS_JSON=$(curl -s "http://127.0.0.1:$SERVER_PORT/pipeline/status" 2>/dev/null)
     PIPELINE_DONE=$(echo "$STATUS_JSON" | jq -r '.done // false' 2>/dev/null)
     PIPELINE_STATE=$(echo "$STATUS_JSON" | jq -r '.state // "unknown"' 2>/dev/null)
     QUEUE_PENDING=$(echo "$STATUS_JSON" | jq -r '.queue_pending // 0' 2>/dev/null)
-    echo "  Pipeline: $PIPELINE_STATE | Cola: $QUEUE_PENDING pendientes" | tee -a "$LOG"
+    if (( i % 3 == 0 )); then
+      echo "  Estado: $PIPELINE_STATE | Cola: $QUEUE_PENDING pendientes" | tee -a "$LOG"
+    fi
     if [[ "$PIPELINE_DONE" == "true" && "$QUEUE_PENDING" == "0" ]]; then break; fi
   done
 
-  # Shutdown test server
+  # ── Apagar servidor de test ─────────────────────────────────────────────────
   curl -s -X POST "http://127.0.0.1:$SERVER_PORT/shutdown" >/dev/null 2>&1 || true
   wait $TEST_SERVER_PID 2>/dev/null || true
 
-  rm -f "$PROMPT_FILE"
-
-  if [[ "$TEST_OPTION" == "2" ]]; then
-    # Direct URL mode — pipeline handled everything (extract phone, build message, send WhatsApp)
-    echo "" | tee -a "$LOG"
-    echo "═══════════════════════════════════════════" | tee -a "$LOG"
-    echo "  RESULTADO DEL TEST (URL directa)" | tee -a "$LOG"
-    echo "═══════════════════════════════════════════" | tee -a "$LOG"
-    echo "" | tee -a "$LOG"
-    echo "URL: $DIRECT_URL" | tee -a "$LOG"
-    echo "Telefono de envio: $TEST_PHONE_OVERRIDE" | tee -a "$LOG"
-    echo "" | tee -a "$LOG"
-    echo "El pipeline ha procesado el inmueble automaticamente." | tee -a "$LOG"
-    echo "Revisa el log del dia: data/logs/$DATE.log" | tee -a "$LOG"
-    echo "Y contacted.json para ver el registro." | tee -a "$LOG"
-  else
-    # BetterPlace mode — check Claude temp files
-    # Check if Claude produced the message file
-    if [[ ! -f "$TEST_MSG_FILE" ]]; then
-      echo "" | tee -a "$LOG"
-      echo "ERROR: No se pudo generar el mensaje. Revisa los logs." | tee -a "$LOG"
-      echo ""
-      echo "Pulsa Enter para cerrar"; read
-      exit 1
-    fi
-
-    # Show results to user
-    echo "" | tee -a "$LOG"
-    echo "═══════════════════════════════════════════" | tee -a "$LOG"
-    echo "  RESULTADO DEL TEST" | tee -a "$LOG"
-    echo "═══════════════════════════════════════════" | tee -a "$LOG"
-    echo "" | tee -a "$LOG"
-
-    if [[ -f "$TEST_DATA_FILE" ]]; then
-      echo "Inmueble: $(jq -r '.zone // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
-      echo "Precio:   $(jq -r '.price // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
-      echo "Portal:   $(jq -r '.portal // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
-      echo "URL:      $(jq -r '.url // "?"' "$TEST_DATA_FILE")" | tee -a "$LOG"
-      PHONE_REAL=$(jq -r '.phone_real // "no extraido"' "$TEST_DATA_FILE")
-      echo "Tel real: $PHONE_REAL" | tee -a "$LOG"
-    fi
-
-    echo "" | tee -a "$LOG"
-    echo "--- Mensaje WhatsApp ---" | tee -a "$LOG"
-    cat "$TEST_MSG_FILE" | tee -a "$LOG"
-    echo "" | tee -a "$LOG"
-    echo "------------------------" | tee -a "$LOG"
-    echo ""
-
-    # Ask for phone number
-    read -p "Telefono al que enviar el test (Enter = 34629659757, 'n' = cancelar): " TEST_PHONE
-    if [[ "$TEST_PHONE" == "n" || "$TEST_PHONE" == "N" ]]; then
-      echo "Envio cancelado." | tee -a "$LOG"
-      rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
-      echo ""
-      echo "Pulsa Enter para cerrar"; read
-      exit 0
-    fi
-    TEST_PHONE="${TEST_PHONE:-34629659757}"
-    # Strip leading +
-    TEST_PHONE="${TEST_PHONE#+}"
-    # Ensure 34 prefix
-    if [[ ! "$TEST_PHONE" == 34* ]]; then
-      TEST_PHONE="34$TEST_PHONE"
-    fi
-
-    echo "" | tee -a "$LOG"
-    echo "Enviando WhatsApp a $TEST_PHONE..." | tee -a "$LOG"
-
-    MSG_CONTENT=$(cat "$TEST_MSG_FILE")
-    if wacli send text --to "$TEST_PHONE" --message "$MSG_CONTENT" 2>&1 | tee -a "$LOG"; then
-      echo "WhatsApp enviado OK" | tee -a "$LOG"
-      SEND_STATUS="test"
-    else
-      echo "ERROR al enviar WhatsApp" | tee -a "$LOG"
-      SEND_STATUS="test_failed"
-    fi
-
-    # Register in contacted.json
-    if [[ -f "$TEST_DATA_FILE" ]]; then
-      CONTACT_NAME=$(jq -r '.name // ""' "$TEST_DATA_FILE")
-      CONTACT_URL=$(jq -r '.url // ""' "$TEST_DATA_FILE")
-      CONTACT_ZONE=$(jq -r '.zone // ""' "$TEST_DATA_FILE")
-      CONTACT_PRICE=$(jq -r '.price // 0' "$TEST_DATA_FILE")
-      CONTACT_PHONE_REAL=$(jq -r '.phone_real // ""' "$TEST_DATA_FILE")
-
-      # Add to contacted.json using jq
-      TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S")
-      MSG_PREVIEW=$(head -c 100 "$TEST_MSG_FILE")
-      jq --arg phone "$TEST_PHONE" \
-         --arg name "$CONTACT_NAME" \
-         --arg url "$CONTACT_URL" \
-         --arg zone "$CONTACT_ZONE" \
-         --argjson price "$CONTACT_PRICE" \
-         --arg date "$TIMESTAMP" \
-         --arg status "$SEND_STATUS" \
-         --arg preview "$MSG_PREVIEW" \
-         --arg notes "TEST: telefono real del anuncio era $CONTACT_PHONE_REAL. Enviado a $TEST_PHONE" \
-         '.contacts += [{"phone":$phone,"name":$name,"url":$url,"portal":"idealista","zone":$zone,"price":$price,"date_contacted":$date,"status":$status,"message_preview":$preview,"notes":$notes}]' \
-         data/contacted.json > data/contacted_tmp.json && mv data/contacted_tmp.json data/contacted.json
-
-      echo "Contacto registrado en contacted.json" | tee -a "$LOG"
-    fi
-
-    rm -f "$TEST_MSG_FILE" "$TEST_DATA_FILE"
+  # ── Resultado ───────────────────────────────────────────────────────────────
+  echo "" | tee -a "$LOG"
+  echo "═══════════════════════════════════════════" | tee -a "$LOG"
+  echo "  RESULTADO DEL TEST" | tee -a "$LOG"
+  echo "═══════════════════════════════════════════" | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
+  echo "  WhatsApp enviado a: $TEST_PHONE" | tee -a "$LOG"
+  echo "" | tee -a "$LOG"
+  # Mostrar los últimos contactos registrados (los del test, últimos 5 min)
+  TEST_SINCE=$(date -u -v-5M +"%Y-%m-%dT%H:%M:%S" 2>/dev/null || date -u --date='5 minutes ago' +"%Y-%m-%dT%H:%M:%S" 2>/dev/null || echo "")
+  if [[ -n "$TEST_SINCE" && -f data/contacted.json ]]; then
+    echo "  Contactos registrados en este test:" | tee -a "$LOG"
+    jq -r --arg since "$TEST_SINCE" \
+      '.contacts[] | select(.date_contacted >= $since) | "    \(.status) | \(.zone // .url // "-") | tel enviado: \(.phone)"' \
+      data/contacted.json 2>/dev/null | tee -a "$LOG" || echo "    (sin registros)" | tee -a "$LOG"
   fi
+  echo "" | tee -a "$LOG"
+  echo "  Log completo: data/logs/$DATE.log" | tee -a "$LOG"
+  echo "  Registro:     data/contacted.json" | tee -a "$LOG"
 
   echo "" | tee -a "$LOG"
   echo "Run TEST completado — $DATE $(date +%H:%M)" | tee -a "$LOG"
@@ -795,9 +651,44 @@ elif [[ "$MODE" == "server" ]]; then
   $SERVER_CMD $DRY_RUN_FLAG 2>&1 | tee -a "$LOG"
 
 # ═══════════════════════════════════════════
-#  MODO BETTERPLACE — Desatendido (Gmail → Chrome Extension → WhatsApp)
+#  MODO START — Daemon (servidor + scheduler + email watcher)
 # ═══════════════════════════════════════════
-elif [[ "$MODE" == "betterplace" ]]; then
+elif [[ "$MODE" == "start" ]]; then
+  DRY_RUN_FLAG=""
+  if [[ "$2" == "--dry-run" ]]; then
+    DRY_RUN_FLAG="--dry-run"
+  fi
+
+  echo ""
+  echo "  ¿En qué modo quieres arrancar el servidor?"
+  echo ""
+  echo "    1) Diario a las 9:00           (ejecuta el pipeline una vez al día, L-V)"
+  echo "    2) Vigilancia cada 30 min      (revisa Gmail cada 30 min, solo emails nuevos)"
+  echo "    3) Ambos  [recomendado]        (9:00 diario + vigilancia 30 min)"
+  echo ""
+  read -p "  Modo (1-3, Enter = 3): " START_MODE_OPT
+  START_MODE_OPT="${START_MODE_OPT:-3}"
+
+  case "$START_MODE_OPT" in
+    1) SCHEDULE_MODE_FLAG="--schedule-mode=daily"
+       SCHEDULE_MODE_DESC="Diario a las 9:00 (L-V)" ;;
+    2) SCHEDULE_MODE_FLAG="--schedule-mode=watch"
+       SCHEDULE_MODE_DESC="Vigilancia de Gmail cada 30 min" ;;
+    *)  SCHEDULE_MODE_FLAG="--schedule-mode=both"
+       SCHEDULE_MODE_DESC="Ambos: 9:00 diario + vigilancia 30 min" ;;
+  esac
+
+  echo ""
+  echo "Modo: $SCHEDULE_MODE_DESC $DRY_RUN_FLAG" | tee -a "$LOG"
+
+  SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
+  echo "Lanzando servidor en puerto $SERVER_PORT..." | tee -a "$LOG"
+  $SERVER_CMD $DRY_RUN_FLAG $SCHEDULE_MODE_FLAG 2>&1 | tee -a "$LOG"
+
+# ═══════════════════════════════════════════
+#  MODO RUN / BETTERPLACE — Ejecutar una vez ahora
+# ═══════════════════════════════════════════
+elif [[ "$MODE" == "run" || "$MODE" == "betterplace" ]]; then
   echo "Modo: BetterPlace desatendido (Gmail → Chrome Extension → WhatsApp)" | tee -a "$LOG"
 
   SERVER_PORT=$(jq -r '.server.port // 3456' config.json)
@@ -869,6 +760,7 @@ elif [[ "$MODE" == "betterplace" ]]; then
 
 else
   echo "Modo desconocido: $MODE" | tee -a "$LOG"
-  echo "Usa: ./run.sh test | dashboard | api | email | server | betterplace" | tee -a "$LOG"
+  echo "Usa: ./run.sh run | start | test | dashboard" | tee -a "$LOG"
+  echo "     ./run.sh --help para ver toda la ayuda" | tee -a "$LOG"
   exit 1
 fi

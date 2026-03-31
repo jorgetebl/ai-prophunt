@@ -1,55 +1,21 @@
 /**
- * Claude API proxy client.
- * All calls go through the Netlify Function at /api/claude,
- * authenticated with the user's Supabase JWT.
- * The ANTHROPIC_API_KEY never leaves Netlify's environment.
+ * Claude API client — calls Anthropic SDK directly.
+ * Requires ANTHROPIC_API_KEY in environment.
  */
 
-const PROXY_URL = process.env.CLAUDE_PROXY_URL || 'https://prophunt-app.netlify.app/api/claude';
+import Anthropic from '@anthropic-ai/sdk';
 
-let _accessToken = null;
+const MODEL = 'claude-sonnet-4-5';
+let _client = null;
 
-/**
- * Set the Supabase access token used to authenticate proxy calls.
- * Called once after login from server.js.
- */
-export function setAccessToken(token) {
-  _accessToken = token;
-}
-
-async function callProxy(action, payload, retries = 3) {
-  if (!_accessToken) {
-    throw new Error('No Supabase access token set. Call setAccessToken() after login.');
-  }
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${_accessToken}`,
-      },
-      body: JSON.stringify({ action, payload }),
-    });
-
-    if (res.status === 401) throw new Error('Claude proxy: unauthorized — token expired?');
-    if (res.status === 403) throw new Error('Claude proxy: no active subscription');
-
-    if (res.status === 429 && attempt < retries) {
-      const wait = Math.min(30, (attempt + 1) * 10); // 10s, 20s, 30s
-      console.log(`Claude proxy: rate limited, waiting ${wait}s (attempt ${attempt + 1}/${retries})...`);
-      await new Promise(r => setTimeout(r, wait * 1000));
-      continue;
+function getClient() {
+  if (!_client) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY no configurada en .env');
     }
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(`Claude proxy error: ${res.status} ${JSON.stringify(err)}`);
-    }
-
-    const data = await res.json();
-    return data.result;
+    _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
+  return _client;
 }
 
 /**
@@ -58,7 +24,59 @@ async function callProxy(action, payload, retries = 3) {
  * @returns {Promise<Array<{url, zone, price, portal, isParticular}>>}
  */
 export async function parseEmail(text) {
-  return callProxy('parse_email', { text });
+  const truncated = text.slice(0, 12000);
+  const msg = await getClient().messages.create({
+    model: MODEL,
+    max_tokens: 2048,
+    messages: [{
+      role: 'user',
+      content: `Eres un parser de emails inmobiliarios. Analiza este email de BetterPlace (puede ser texto plano o HTML) y extrae los inmuebles de PARTICULARES.
+
+El email puede tener dos formatos:
+
+FORMATO TEXTO PLANO:
+[Título/zona]
+[Precio] € | [m²] | [habs]
+Particular en [portal]
+[Links: Valoración, Tarea, Informe de captación, Ficha del inmueble]
+
+FORMATO HTML:
+- Cada inmueble aparece como un bloque con título, precio, tipo de vendedor y links
+- Los links pueden ser directos (idealista.com, fotocasa.es, pisos.com) o redirects de BetterPlace (click.betterplaceapp.com)
+- Busca si dice "Particular" (no "Agencia") cerca de cada inmueble
+- El link de "Ficha del inmueble" o el link al portal es la URL que necesitas
+
+IMPORTANTE sobre los links:
+- Si el link es directo al portal (idealista.com, fotocasa.es, pisos.com, habitaclia.com) → úsalo tal cual
+- Si el link es un redirect de BetterPlace (click.betterplaceapp.com o similar) → úsalo también, es válido
+
+Devuelve SOLO un JSON array con los inmuebles de PARTICULARES. Formato:
+[
+  {
+    "url": "https://...",
+    "zone": "Calle/zona del inmueble",
+    "price": 350000,
+    "portal": "idealista",
+    "isParticular": true
+  }
+]
+
+Si no hay particulares devuelve [].
+Devuelve SOLO el JSON, sin markdown, sin explicaciones.
+
+EMAIL:
+${truncated}`,
+    }],
+  });
+
+  const content = msg.content[0].text.trim();
+  try {
+    return JSON.parse(content);
+  } catch {
+    const match = content.match(/\[[\s\S]*\]/);
+    if (match) return JSON.parse(match[0]);
+    return [];
+  }
 }
 
 /**
@@ -68,7 +86,62 @@ export async function parseEmail(text) {
  * @returns {Promise<{found: boolean, phone?: string, action?: string, noPhone?: boolean}>}
  */
 export async function extractPhone(domText, portal, { afterClick = false } = {}) {
-  return callProxy('extract_phone', { domText, portal, afterClick });
+  const truncated = domText.slice(0, 14000);
+
+  // First pass (before clicking): always click "Ver teléfono" to reveal the owner's phone.
+  // Any phone visible before clicking belongs to the logged-in user, NOT the owner.
+  if (!afterClick) {
+    return { found: false, action: 'click', hint: 'Ver teléfono' };
+  }
+
+  // Fast regex pass — avoid Claude call if phone is already visible
+  const phoneRegex = /\b(6\d[\d\s]{7,10}|7\d[\d\s]{7,10})\b/g;
+  const matches = domText.match(phoneRegex);
+  if (matches) {
+    for (const m of matches) {
+      const cleaned = m.replace(/\s/g, '');
+      if (cleaned.length >= 9 && cleaned.length <= 12 && /^[67]/.test(cleaned)) {
+        return { found: true, phone: cleaned };
+      }
+    }
+  }
+
+  const msg = await getClient().messages.create({
+    model: MODEL,
+    max_tokens: 256,
+    messages: [{
+      role: 'user',
+      content: `Eres un extractor de teléfonos de fichas inmobiliarias en ${portal}.
+
+Analiza este texto de la página y responde con JSON:
+
+IMPORTANTE: En idealista, después de pulsar "Ver teléfono" aparece una sección "Teléfonos de contacto" con el número del PROPIETARIO. Ese es el que quieres.
+NO extraigas teléfonos que aparezcan en zonas de perfil del usuario logueado o en la cabecera.
+
+Si encuentras el teléfono del PROPIETARIO (sección de contacto, suele empezar por 6 o 7, tiene 9 dígitos):
+{"found": true, "phone": "612345678"}
+
+Si necesitas pulsar un botón para revelarlo ("Ver teléfono"):
+{"found": false, "action": "click", "hint": "Ver teléfono"}
+
+Si no hay teléfono ni botón:
+{"found": false, "noPhone": true}
+
+Devuelve SOLO el JSON, sin markdown.
+
+TEXTO DE LA PÁGINA:
+${truncated}`,
+    }],
+  });
+
+  const content = msg.content[0].text.trim();
+  try {
+    return JSON.parse(content);
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    return { found: false, noPhone: true };
+  }
 }
 
 /**
@@ -78,14 +151,127 @@ export async function extractPhone(domText, portal, { afterClick = false } = {})
  * @returns {Promise<{zone, price, priceText, propertyType, operation, sqm, rooms, bathrooms, floor, features, ownerName, description}>}
  */
 export async function extractDetails(domText, portal) {
-  return callProxy('extract_details', { domText, portal });
+  const truncated = domText.slice(0, 14000);
+  const msg = await getClient().messages.create({
+    model: MODEL,
+    max_tokens: 512,
+    messages: [{
+      role: 'user',
+      content: `Extrae los datos de esta ficha de inmueble de ${portal}. Devuelve SOLO JSON:
+
+{
+  "zone": "dirección o zona (ej: Calle Suertes de la Villa 2, El Cañaveral, Madrid)",
+  "price": 350000,
+  "priceText": "350.000 €",
+  "propertyType": "piso",
+  "operation": "venta",
+  "sqm": 113,
+  "rooms": 3,
+  "bathrooms": 2,
+  "floor": "8ª planta",
+  "features": ["ascensor", "garaje", "terraza", "aire acondicionado"],
+  "ownerName": "Juan Carlos",
+  "description": "resumen de 1 frase de lo más destacado del inmueble"
 }
+
+Reglas:
+- "zone": dirección lo más completa posible (calle + barrio + ciudad)
+- "price": número sin formatear. Si es alquiler, precio mensual
+- "operation": "venta" o "alquiler"
+- "propertyType": piso, casa, ático, dúplex, estudio, chalet, local, etc.
+- "ownerName": nombre del particular si aparece (no el del usuario logueado)
+- "features": array con características destacadas (máx 6)
+- "description": 1 frase corta y concreta sobre lo más atractivo
+- Si un campo no está disponible, usa null
+- Devuelve SOLO el JSON, sin markdown
+
+TEXTO DE LA PÁGINA:
+${truncated}`,
+    }],
+  });
+
+  const content = msg.content[0].text.trim();
+  try {
+    return JSON.parse(content);
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    return {};
+  }
+}
+
+const DEFAULT_TEMPLATE = `Hola{{nombre}}, soy {{agente}}, {{cargo}}.
+
+He visto tu {{tipo}} en {{zona}} que tienes en {{portal}}{{precio}}. {{detalle}}
+
+No te escribo para convencerte de trabajar con una agencia 🙂
+
+Solo comentarte algo: vender por tu cuenta es totalmente posible, pero vender bien, en menos tiempo y sin tener que bajar el precio es lo complicado.
+
+Si algun dia te apetece ver como lo trabajariamos y luego decides si te aporta valor o no, llamame y lo vemos sin ningun compromiso.`;
 
 /**
  * Build a personalized WhatsApp message using Claude.
- * @param {Object} contact - {name, zone, portal, price, propertyType, detail}
+ * @param {Object} contact - {name, zone, portal, price, propertyType, detail, agentName, agentCompany, agentRole, template, vars}
  * @returns {Promise<string>}
  */
 export async function buildMessage(contact) {
-  return callProxy('build_message', { contact });
+  const template = contact.template || DEFAULT_TEMPLATE;
+  const vars = contact.vars || { price: true, zone: true, detail: true };
+  const agentName = contact.agentName || 'tu agente inmobiliario';
+  const agentCompany = contact.agentCompany || '';
+  const agentRole = contact.agentRole || 'agente inmobiliario profesional';
+
+  const dataLines = [
+    `- Nombre vendedor: ${contact.name || 'desconocido'}`,
+    `- Nombre agente: ${agentName}`,
+    `- Empresa: ${agentCompany || 'no especificada'}`,
+    `- Cargo: ${agentRole}`,
+    `- Portal: ${contact.portal || 'el portal'}`,
+    `- Tipo de inmueble: ${contact.propertyType || 'vivienda'}`,
+    `- Operacion: ${contact.operation || 'venta'}`,
+  ];
+  if (vars.zone !== false) dataLines.push(`- Zona: ${contact.zone || 'desconocida'}`);
+  if (vars.price !== false) dataLines.push(`- Precio: ${contact.priceText || (contact.price ? Number(contact.price).toLocaleString('es-ES') + ' €' : 'desconocido')}`);
+  if (contact.sqm) dataLines.push(`- Metros: ${contact.sqm} m2`);
+  if (contact.rooms) dataLines.push(`- Habitaciones: ${contact.rooms}`);
+  if (contact.floor) dataLines.push(`- Planta: ${contact.floor}`);
+  if (contact.features?.length) dataLines.push(`- Caracteristicas: ${contact.features.join(', ')}`);
+  if (vars.detail !== false && contact.detail) dataLines.push(`- Detalle de la ficha: ${contact.detail}`);
+
+  const instructions = [
+    '- Si hay nombre vendedor: "Hola [nombre]," — si no: "Hola,"',
+    '- Reemplaza {{agente}} con el nombre del agente, {{cargo}} con su cargo, {{empresa}} con su empresa',
+    '- Reemplaza {{tipo}}, {{zona}}, {{portal}} con los datos reales',
+    '- Manten el tono profesional pero cercano',
+    '- Devuelve SOLO el mensaje final, sin comillas, sin explicaciones',
+  ];
+  if (vars.price !== false) instructions.push('- Si hay precio: incluye "por [precio]" — si no: omite {{precio}}');
+  else instructions.push('- NO menciones el precio, elimina {{precio}} de la plantilla');
+  if (vars.zone !== false) instructions.push('- Incluye la zona/direccion del inmueble');
+  else instructions.push('- NO menciones la zona, usa algo generico');
+  if (vars.detail !== false) instructions.push('- {{detalle}}: UNA frase natural (max 20 palabras) mencionando algo concreto y positivo del inmueble basado en los datos');
+  else instructions.push('- NO añadas detalle extra, elimina {{detalle}}');
+
+  const msg = await getClient().messages.create({
+    model: MODEL,
+    max_tokens: 512,
+    messages: [{
+      role: 'user',
+      content: `Eres un agente inmobiliario profesional.
+Escribe un WhatsApp para captar a un particular que vende su piso. Usa esta plantilla base pero personalizala:
+
+---
+${template}
+---
+
+Datos del inmueble:
+${dataLines.join('\n')}
+
+Instrucciones:
+${instructions.join('\n')}`,
+    }],
+  });
+
+  return msg.content[0].text.trim();
 }

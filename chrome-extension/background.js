@@ -83,10 +83,17 @@ function waitForLoad(tabId, resolve, taskId) {
 
     // Extra 3s for dynamic content
     setTimeout(async () => {
+      // Capture the final URL after any redirects
+      let finalUrl = null;
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        finalUrl = tab.url || null;
+      } catch { /* tab may have closed */ }
+
       await fetch(`${SERVER}/browser/action-done`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId, action: 'navigate', ok: true }),
+        body: JSON.stringify({ taskId, action: 'navigate', ok: true, finalUrl }),
       }).catch(() => {});
       resolve();
     }, 3000);
@@ -235,7 +242,7 @@ function extractGmailThreadLinks() {
   if (links.length === 0) {
     document.querySelectorAll('a[href*="mail.google.com"]').forEach(a => {
       const href = a.href;
-      if (/\/[0-9a-f]{16}(\?|$|#|/)/.test(href) && !seen.has(href)) {
+      if (/\/[0-9a-f]{16}(\?|$|#|\/)/.test(href) && !seen.has(href)) {
         seen.add(href);
         links.push(href);
       }

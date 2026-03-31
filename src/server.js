@@ -9,13 +9,16 @@ import { normalizePhone, isValidMobile } from './phone.js';
 import { loadContacted, getTodayContactCount } from './filter.js';
 import { createQueue } from './queue.js';
 import { isConfigured, getUserId, getContacts, addContact, getLogs as sbGetLogs, getConfig as sbGetConfig, init as initSupabase, reportVersion } from './supabase.js';
-import { parseEmail, extractPhone, extractDetails, buildMessage as claudeBuildMessage, setAccessToken } from './claude.js';
+import { parseEmail, extractPhone, extractDetails, buildMessage as claudeBuildMessage } from './claude.js';
 
 const CONFIG_PATH = join(import.meta.dirname, '..', 'config.json');
 const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
+const SEEN_EMAIL_IDS_PATH = join(import.meta.dirname, '..', 'data', 'seen_email_ids.json');
 
 const dryRun = process.argv.includes('--dry-run');
 const dashboardMode = process.argv.includes('--dashboard');
+const scheduleModeArg = process.argv.find(a => a.startsWith('--schedule-mode='));
+const scheduleMode = scheduleModeArg ? scheduleModeArg.split('=')[1] : 'both'; // 'daily' | 'watch' | 'both'
 const PORT = config.server?.port || Number(process.env.BRIDGE_PORT) || 3456;
 const PROJECT_ROOT = join(import.meta.dirname, '..');
 const PUBLIC_DIR = join(PROJECT_ROOT, 'public');
@@ -456,6 +459,11 @@ async function handleBrowserActionDone(req, res) {
 
   if (state === 'PROPERTY_NAVIGATE_WAITING' && body.action === 'navigate') {
     if (body.ok) {
+      // Resolve redirect URLs (e.g. click.betterplaceapp.com → idealista.com/inmueble/xxx)
+      if (body.finalUrl && !body.finalUrl.includes('betterplaceapp.com') && body.finalUrl !== pipeline.currentProperty.url) {
+        pipelineLog(`URL resolved: ${pipeline.currentProperty.url} → ${body.finalUrl}`);
+        pipeline.currentProperty.url = body.finalUrl;
+      }
       pipeline.state = 'DOM_PENDING';
     } else {
       pipelineLog(`Property navigation failed: ${body.error}`);
@@ -514,34 +522,13 @@ async function handleBrowserLinks(req, res) {
   pipelineLog(`Opening email 1/${links.length}`);
 }
 
-async function handleRunBetterplace(_req, res) {
+async function handleRunBetterplace(req, res) {
   if (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') {
     return json(res, 409, { error: 'Pipeline already running', state: pipeline.state });
   }
 
-  // Mode + rate limit check before starting
-  try {
-    const userId = await getUserId();
-    if (userId) {
-      const cfg = await sbGetConfig(userId);
-
-      // Check mode
-      const mode = cfg?.mode || 'betterplace';
-      if (mode !== 'betterplace' && mode !== 'both') {
-        log(`BetterPlace blocked — user mode is '${mode}'`);
-        return json(res, 403, { error: `Modo '${mode}' no permite BetterPlace` });
-      }
-
-      const maxPerDay = cfg?.max_contacts_per_day || 15;
-      const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
-      const todayContacts = await getContacts(userId, { date: today });
-      const sentToday = todayContacts.filter(c => ['sent', 'test', 'dry_run', 'queued'].includes(c.status)).length;
-      if (sentToday >= maxPerDay) {
-        log(`Rate limit: ${sentToday}/${maxPerDay} — pipeline blocked`);
-        return json(res, 429, { error: `Limite diario alcanzado (${sentToday}/${maxPerDay})` });
-      }
-    }
-  } catch { /* proceed anyway */ }
+  let body = {};
+  try { body = await readBody(req); } catch { /* body is optional */ }
 
   // Reset pipeline
   pipeline = {
@@ -555,8 +542,10 @@ async function handleRunBetterplace(_req, res) {
     clickAttempts: 0,
     results: [],
     _pendingClickHint: null,
+    _phoneOverride: body.phone_override || null,
   };
 
+  if (pipeline._phoneOverride) pipelineLog(`TEST MODE: phone override → ${pipeline._phoneOverride}`);
   json(res, 200, { ok: true, message: 'Pipeline started' });
 
   // Try gogcli first — if available, read Gmail directly without Chrome extension
@@ -564,6 +553,7 @@ async function handleRunBetterplace(_req, res) {
     const gogPath = execSync('command -v gog', { encoding: 'utf-8', timeout: 3000 }).trim();
     if (gogPath) {
       pipelineLog('Pipeline started — fetching emails via gogcli');
+      pipeline.state = 'GMAIL_LINKS_PENDING'; // non-IDLE so poller knows it's active
       setImmediate(() => fetchEmailsWithGog().catch(err => {
         pipelineLog(`gogcli failed (${err.message}) — falling back to Chrome extension`);
         pipeline.state = 'GMAIL_NAVIGATE';
@@ -670,97 +660,6 @@ async function handleRunDirect(req, res) {
 
   pipelineLog(`Direct pipeline started — navigating to: ${url}`);
   json(res, 200, { ok: true, message: 'Direct pipeline started', url });
-}
-
-// --- Stripe webhook handler ---
-
-async function handleStripeWebhook(req, res) {
-  let rawBody;
-  try {
-    rawBody = await new Promise((resolve, reject) => {
-      const chunks = [];
-      req.on('data', c => chunks.push(c));
-      req.on('end', () => resolve(Buffer.concat(chunks)));
-      req.on('error', reject);
-    });
-  } catch {
-    return json(res, 400, { error: 'Could not read body' });
-  }
-
-  const sig = req.headers['stripe-signature'];
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-  if (!webhookSecret) {
-    return json(res, 500, { error: 'Stripe webhook secret not configured' });
-  }
-
-  let event;
-  try {
-    const stripe = (await import('stripe')).default;
-    const stripeClient = stripe(process.env.STRIPE_SECRET_KEY);
-    event = stripeClient.webhooks.constructEvent(rawBody, sig, webhookSecret);
-  } catch (err) {
-    log(`Stripe webhook signature error: ${err.message}`);
-    return json(res, 400, { error: `Webhook Error: ${err.message}` });
-  }
-
-  const { isConfigured: sbConfigured } = await import('./supabase.js');
-
-  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
-    const sub = event.data.object;
-    const customerId = sub.customer;
-    const priceId = sub.items?.data?.[0]?.price?.id;
-    const PRICE_TO_PLAN = {
-      [process.env.STRIPE_PRICE_PRO]: 'pro',
-      [process.env.STRIPE_PRICE_BASICO]: 'basico',
-      [process.env.STRIPE_PRICE_AGENTE]: 'agente',
-      [process.env.STRIPE_PRICE_OFICINA]: 'oficina',
-      [process.env.STRIPE_PRICE_AGENCIA]: 'agencia',
-    };
-    const plan = PRICE_TO_PLAN[priceId] || 'basico';
-
-    if (sbConfigured()) {
-      try {
-        const { createClient } = await import('@supabase/supabase-js');
-        const adminClient = createClient(
-          process.env.SUPABASE_URL,
-          process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
-        );
-        await adminClient.from('subscriptions').upsert({
-          stripe_customer_id: customerId,
-          stripe_subscription_id: sub.id,
-          plan,
-          status: sub.status === 'active' ? 'active' : 'inactive',
-          current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'stripe_subscription_id' });
-        log(`Stripe: subscription upserted (${customerId}, ${plan})`);
-      } catch (err) {
-        log(`Stripe: Supabase upsert error — ${err.message}`);
-      }
-    }
-  }
-
-  if (event.type === 'customer.subscription.deleted') {
-    const sub = event.data.object;
-    if (sbConfigured()) {
-      try {
-        const { createClient } = await import('@supabase/supabase-js');
-        const adminClient = createClient(
-          process.env.SUPABASE_URL,
-          process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
-        );
-        await adminClient.from('subscriptions')
-          .update({ status: 'canceled', updated_at: new Date().toISOString() })
-          .eq('stripe_subscription_id', sub.id);
-        log(`Stripe: subscription canceled (${sub.id})`);
-      } catch (err) {
-        log(`Stripe: Supabase cancel error — ${err.message}`);
-      }
-    }
-  }
-
-  json(res, 200, { received: true });
 }
 
 // --- Route handlers ---
@@ -1125,7 +1024,7 @@ async function start() {
     process.exit(0);
   }
 
-  // Resolve Supabase user before starting
+  // Connect to Supabase for contacts/logs persistence (optional)
   if (isConfigured()) {
     const ready = await initSupabase();
     if (ready) {
@@ -1135,32 +1034,11 @@ async function start() {
         const pkg = JSON.parse(readFileSync(join(PROJECT_ROOT, 'package.json'), 'utf-8'));
         await reportVersion(uid, pkg.version);
       } catch (_) {}
-
-      // Login to get JWT for Claude proxy
-      const email = process.env.PROPHUNT_EMAIL;
-      const password = process.env.PROPHUNT_PASSWORD;
-      if (email && password) {
-        try {
-          const { createClient } = await import('@supabase/supabase-js');
-          const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
-          const { data, error } = await sb.auth.signInWithPassword({ email, password });
-          if (error) throw error;
-          setAccessToken(data.session.access_token);
-          log('Server: Claude proxy authenticated via Supabase JWT');
-          // Refresh token before expiry (every 50 min)
-          setInterval(async () => {
-            const { data: refreshed } = await sb.auth.refreshSession();
-            if (refreshed?.session) setAccessToken(refreshed.session.access_token);
-          }, 50 * 60 * 1000);
-        } catch (err) {
-          log(`Server: WARNING — could not get JWT for Claude proxy: ${err.message}`);
-        }
-      }
     } else {
-      log('Server: Supabase configured but could not resolve user — using local JSON files');
+      log('Server: Supabase configured but could not connect — using local JSON files');
     }
   } else {
-    log('Server: Supabase not configured, using local JSON files');
+    log('Server: using local JSON files (Supabase not configured)');
   }
 
   server.listen(PORT, '127.0.0.1', () => {
@@ -1170,24 +1048,118 @@ async function start() {
   });
 }
 
-// --- Daily auto-run scheduler ---
+// --- Scheduler: daily BetterPlace at 9:00 + email watcher every 30min ---
 
 let schedulerLastRunDate = null;
+
+/**
+ * Trigger the BetterPlace pipeline (same flow as POST /api/run-betterplace).
+ * Uses gogcli if available, falls back to Chrome extension.
+ */
+function triggerBetterplacePipeline(reason) {
+  if (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') {
+    log(`Scheduler: pipeline already running (${pipeline.state}) — skipping trigger`);
+    return;
+  }
+
+  pipeline = {
+    state: 'IDLE',
+    taskId: nextTaskId(),
+    emailUrls: [],
+    emailIdx: 0,
+    properties: [],
+    currentIdx: 0,
+    currentProperty: null,
+    clickAttempts: 0,
+    results: [],
+    _pendingClickHint: null,
+  };
+
+  pipelineLog(`Pipeline triggered by scheduler (${reason})`);
+
+  try {
+    const gogPath = execSync('command -v gog', { encoding: 'utf-8', timeout: 3000 }).trim();
+    if (gogPath) {
+      pipeline.state = 'GMAIL_LINKS_PENDING'; // non-IDLE so poller knows it's active
+      setImmediate(() => fetchEmailsWithGog().catch(err => {
+        pipelineLog(`gogcli failed (${err.message}) — falling back to Chrome extension`);
+        pipeline.state = 'GMAIL_NAVIGATE';
+        pipeline.taskId = nextTaskId();
+      }));
+      return;
+    }
+  } catch { /* gog not installed */ }
+
+  pipeline.state = 'GMAIL_NAVIGATE';
+  pipeline.taskId = nextTaskId();
+  pipelineLog('Navigating to Gmail via Chrome extension');
+}
+
+// --- Seen email IDs persistence (survives server restarts) ---
+
+function loadSeenEmailIds() {
+  try {
+    if (existsSync(SEEN_EMAIL_IDS_PATH)) {
+      const data = JSON.parse(readFileSync(SEEN_EMAIL_IDS_PATH, 'utf-8'));
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 2);
+      const cutoffStr = cutoff.toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+      return new Set(
+        (data.ids || []).filter(e => e.date >= cutoffStr).map(e => e.id)
+      );
+    }
+  } catch { /* ignore */ }
+  return new Set();
+}
+
+function saveSeenEmailIds(set) {
+  try {
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+    let existing = [];
+    try {
+      if (existsSync(SEEN_EMAIL_IDS_PATH)) {
+        existing = JSON.parse(readFileSync(SEEN_EMAIL_IDS_PATH, 'utf-8')).ids || [];
+      }
+    } catch { /* ignore */ }
+
+    const existingMap = new Map(existing.map(e => [e.id, e.date]));
+    for (const id of set) {
+      if (!existingMap.has(id)) existingMap.set(id, today);
+    }
+
+    // Prune entries older than 2 days
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 2);
+    const cutoffStr = cutoff.toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+    const ids = Array.from(existingMap.entries())
+      .filter(([, date]) => date >= cutoffStr)
+      .map(([id, date]) => ({ id, date }));
+
+    writeFileSync(SEEN_EMAIL_IDS_PATH, JSON.stringify({ ids }, null, 2) + '\n');
+  } catch (err) {
+    log(`saveSeenEmailIds error: ${err.message}`);
+  }
+}
 
 function startScheduler() {
   const schedule = config.schedule || {};
   const runTime = schedule.run_time || '09:00';
+  const endTime = '19:30';
   const tz = schedule.timezone || 'Europe/Madrid';
   const workingDays = schedule.working_days || [1, 2, 3, 4, 5];
+  const pollMinutes = schedule.betterplace_polling_minutes || 30;
 
-  log(`Scheduler: daily API search at ${runTime} (${tz}), days: ${workingDays.join(',')}`);
+  const modeDesc = scheduleMode === 'daily' ? `diario ${runTime}`
+    : scheduleMode === 'watch' ? `vigilancia cada ${pollMinutes}min`
+    : `diario ${runTime} + vigilancia cada ${pollMinutes}min`;
+  log(`Scheduler: modo "${scheduleMode}" — ${modeDesc} (${tz}, días: ${workingDays.join(',')})`);
 
-  // Check every 30 seconds
-  setInterval(async () => {
+  // ── 1. Daily 9:00 trigger ──────────────────────────────────────────────────
+  if (scheduleMode === 'both' || scheduleMode === 'daily') setInterval(() => {
     const now = new Date();
     const madridNow = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-    const hhmm = madridNow.toTimeString().slice(0, 5); // "HH:MM"
-    const today = madridNow.toLocaleDateString('sv-SE'); // "YYYY-MM-DD"
+    const hhmm = madridNow.toTimeString().slice(0, 5);
+    const today = madridNow.toLocaleDateString('sv-SE');
     const dayOfWeek = madridNow.getDay();
 
     if (
@@ -1196,158 +1168,62 @@ function startScheduler() {
       schedulerLastRunDate !== today &&
       (pipeline.state === 'IDLE' || pipeline.state === 'DONE')
     ) {
-      // Check user mode — only run API search if mode is 'api' or 'both'
-      try {
-        const userId = await getUserId();
-        if (userId) {
-          const cfg = await sbGetConfig(userId);
-          const mode = cfg?.mode || 'betterplace';
-          if (mode !== 'api' && mode !== 'both') {
-            log(`Scheduler: skipping API search — user mode is '${mode}'`);
-            schedulerLastRunDate = today;
-            return;
-          }
-        }
-      } catch { /* proceed */ }
-
       schedulerLastRunDate = today;
-      log(`Scheduler: triggering daily API search (${today} ${hhmm})`);
-      runDailyApiSearch();
+      log(`Scheduler: daily trigger at ${today} ${hhmm}`);
+      triggerBetterplacePipeline('daily 9:00');
     }
-  }, 30000);
+  }, 30000); // end daily trigger
+
+  // ── 2. Email watcher: poll gogcli every N minutes ──────────────────────────
+  if (scheduleMode === 'both' || scheduleMode === 'watch') {
+  const seenEmailIds = loadSeenEmailIds();
+  if (seenEmailIds.size > 0) log(`Email watcher: loaded ${seenEmailIds.size} previously seen email ID(s)`);
+
+  setInterval(() => {
+    const now = new Date();
+    const madridNow = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+    const hhmm = madridNow.toTimeString().slice(0, 5);
+    const dayOfWeek = madridNow.getDay();
+
+    // Only during working hours
+    if (!workingDays.includes(dayOfWeek) || hhmm < '09:00' || hhmm >= endTime) return;
+    // Don't interrupt an active pipeline
+    if (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') return;
+
+    let gogPath;
+    try {
+      gogPath = execSync('command -v gog', { encoding: 'utf-8', timeout: 3000 }).trim();
+    } catch { return; }
+    if (!gogPath) return;
+
+    try {
+      const searchOutput = execSync(
+        `gog gmail search 'from:alertas@betterplaceapp.com newer_than:1d'`,
+        { encoding: 'utf-8', timeout: 15000 }
+      );
+      const ids = searchOutput.trim().split('\n')
+        .slice(1) // skip header
+        .map(line => line.trim().split(/\s+/)[0])
+        .filter(id => id && /^[0-9a-f]{16,}$/i.test(id));
+
+      const newIds = ids.filter(id => !seenEmailIds.has(id));
+      if (newIds.length > 0) {
+        newIds.forEach(id => seenEmailIds.add(id));
+        saveSeenEmailIds(seenEmailIds);
+        log(`Email watcher: ${newIds.length} new BetterPlace email(s) — triggering pipeline`);
+        triggerBetterplacePipeline(`new email(s): ${newIds.join(', ')}`);
+      }
+    } catch (err) {
+      log(`Email watcher: ${err.message}`);
+    }
+  }, pollMinutes * 60 * 1000);
+  } // end watch mode
 }
 
 function nextMinute(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
   const totalMin = h * 60 + m + 2; // 2-minute window to catch it
   return `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`;
-}
-
-const NOTIFY_PHONE = '34619458478';
-
-function sendNotification(message) {
-  return new Promise((resolve) => {
-    execFile('wacli', ['send', 'text', '--to', NOTIFY_PHONE, '--message', message], (err) => {
-      if (err) log(`Scheduler: notification failed — ${err.message}`);
-      resolve();
-    });
-  });
-}
-
-async function runDailyApiSearch() {
-  try {
-    // Step 1: Run the search (spawns index.js / search.bundle.cjs)
-    const searchCmd = existsSync(join(PROJECT_ROOT, 'src', 'index.js'))
-      ? 'node src/index.js'
-      : 'node search.bundle.cjs';
-
-    log('Scheduler: running API search...');
-    await sendNotification(`Buenos días, acabo de arrancar la búsqueda de hoy. Voy a revisar los inmuebles nuevos en Idealista y contactar a los particulares que encuentre. Te aviso cuando termine 👍`);
-
-    try {
-      execSync(searchCmd, { cwd: PROJECT_ROOT, timeout: 120000, stdio: 'pipe' });
-    } catch (err) {
-      log(`Scheduler: search failed — ${err.message}`);
-      await sendNotification(`Ha habido un problema con la búsqueda de hoy, no he podido conectar con Idealista. Lo reviso y lo intento mañana.`);
-      return;
-    }
-
-    // Step 2: Read pending.json
-    const pendingPath = join(PROJECT_ROOT, 'data', 'pending.json');
-    if (!existsSync(pendingPath)) {
-      log('Scheduler: no pending.json generated');
-      return;
-    }
-
-    const pending = JSON.parse(readFileSync(pendingPath, 'utf-8'));
-    const properties = pending.properties || [];
-    if (properties.length === 0) {
-      log('Scheduler: no properties to process');
-      return;
-    }
-
-    log(`Scheduler: ${properties.length} properties to process`);
-
-    // Step 3: Process each property via the pipeline
-    for (let i = 0; i < properties.length; i++) {
-      const prop = properties[i];
-      log(`Scheduler: [${i + 1}/${properties.length}] ${prop.zone || prop.address || prop.url}`);
-
-      // Wait for pipeline to be idle
-      let waitCount = 0;
-      while (pipeline.state !== 'IDLE' && pipeline.state !== 'DONE') {
-        await new Promise(r => setTimeout(r, 2000));
-        waitCount++;
-        if (waitCount > 90) { // 3 min timeout
-          log('Scheduler: pipeline stuck, skipping remaining');
-          return;
-        }
-      }
-
-      // Start pipeline for this property
-      pipeline = {
-        state: 'PROPERTY_NAVIGATE',
-        taskId: nextTaskId(),
-        properties: [prop],
-        currentIdx: 1,
-        currentProperty: {
-          url: prop.url,
-          portal: prop.portal || 'idealista',
-          zone: prop.zone || prop.address || '',
-          price: prop.price || null,
-          name: prop.name || '',
-        },
-        clickAttempts: 0,
-        results: [],
-        _pendingClickHint: null,
-        _phoneOverride: null,
-      };
-
-      pipelineLog(`Navigating to: ${prop.url}`);
-
-      // Wait for this property to finish (max 3 min)
-      let done = false;
-      for (let j = 0; j < 36; j++) {
-        await new Promise(r => setTimeout(r, 5000));
-        if (pipeline.state === 'DONE' || pipeline.state === 'IDLE') {
-          done = true;
-          break;
-        }
-      }
-
-      if (!done) {
-        log(`Scheduler: timeout on ${prop.url}`);
-        pipeline.state = 'DONE';
-      }
-
-      // Small pause between properties
-      await new Promise(r => setTimeout(r, 3000));
-    }
-
-    // Step 4: Wait for WhatsApp queue to drain
-    const queueState = queue.getState();
-    if (queueState.items.length > 0) {
-      log(`Scheduler: waiting for WhatsApp queue (${queueState.items.length} pending)...`);
-      for (let i = 0; i < 120; i++) {
-        await new Promise(r => setTimeout(r, 5000));
-        if (queue.getState().items.length === 0) break;
-      }
-    }
-
-    const sent = queue.getState().sent;
-    const total = properties.length;
-    const phonesFound = properties.length - (pipeline.results || []).filter(r => r.status === 'failed_no_phone').length;
-    log(`Scheduler: daily run complete — ${sent} WhatsApps sent`);
-
-    if (sent > 0) {
-      await sendNotification(`Ya he terminado la ronda de hoy. He revisado ${total} inmuebles, he conseguido ${sent} teléfonos de particulares y les he escrito a todos. Mañana vuelvo a buscar, cualquier cosa me dices.`);
-    } else {
-      await sendNotification(`He terminado de revisar los ${total} inmuebles de hoy pero no he conseguido extraer teléfonos nuevos. A veces Idealista lo pone difícil. Mañana lo vuelvo a intentar.`);
-    }
-  } catch (err) {
-    log(`Scheduler: error — ${err.message}`);
-    await sendNotification(`Ha habido un error durante la búsqueda de hoy. Lo reviso y mañana lo intento de nuevo.`).catch(() => {});
-  }
 }
 
 // --- Auto-update (check for new version every 30 min) ---

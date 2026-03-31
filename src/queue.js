@@ -46,8 +46,8 @@ export function createQueue(config, { dryRun = false } = {}) {
     const h = madridTime.getHours();
     const m = madridTime.getMinutes();
     const t = h * 60 + m;
-    // 9:00-21:00
-    return (t >= 540 && t < 1260);
+    // 9:00-19:30
+    return (t >= 540 && t < 1170);
   }
 
   async function isDuplicate(contact) {
