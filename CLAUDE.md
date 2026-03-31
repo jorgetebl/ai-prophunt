@@ -123,14 +123,14 @@ Después de cada acción (éxito o fallo), actualizar:
 - Repo: `jorgetebl/ai-prophunt`
 
 ### Supabase CLI
-- **Cuenta: `jorgetebl`** — usar siempre con el token de la cuenta:
+- **Cuenta: `jorgetebl`** — usar siempre con el token de la cuenta (guardado en `.env`):
   ```bash
-  SUPABASE_ACCESS_TOKEN=sbp_aea1df79226c21e0d7bce3bd3c5bf4a3a172a60c supabase <comando>
+  SUPABASE_ACCESS_TOKEN=$SUPABASE_ACCESS_TOKEN supabase <comando>
   ```
 - Proyecto: `ai-prophunt` — ref: `uolymolzgesvxucmbcgw`
 - Ya linkeado. Para ejecutar SQL arbitrario usar la Management API:
   ```bash
-  TOKEN=sbp_aea1df79226c21e0d7bce3bd3c5bf4a3a172a60c
+  TOKEN=$SUPABASE_ACCESS_TOKEN
   curl -s -X POST "https://api.supabase.com/v1/projects/uolymolzgesvxucmbcgw/database/query" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \

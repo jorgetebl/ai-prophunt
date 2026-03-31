@@ -55,7 +55,7 @@ Después del push, comprueba si hay migraciones SQL pendientes en `supabase/`.
 Para saber qué ya está aplicado, consulta las tablas existentes:
 
 ```bash
-TOKEN=sbp_aea1df79226c21e0d7bce3bd3c5bf4a3a172a60c
+TOKEN=$SUPABASE_ACCESS_TOKEN
 curl -s -X POST "https://api.supabase.com/v1/projects/uolymolzgesvxucmbcgw/database/query" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
@@ -71,7 +71,7 @@ Si una tabla ya existe, NO re-ejecutes ese archivo. Solo aplica lo que falte.
 Para aplicar una migración:
 
 ```bash
-TOKEN=sbp_aea1df79226c21e0d7bce3bd3c5bf4a3a172a60c
+TOKEN=$SUPABASE_ACCESS_TOKEN
 curl -s -X POST "https://api.supabase.com/v1/projects/uolymolzgesvxucmbcgw/database/query" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
