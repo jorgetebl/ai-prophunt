@@ -46,8 +46,8 @@ export function createQueue(config, { dryRun = false } = {}) {
     const h = madridTime.getHours();
     const m = madridTime.getMinutes();
     const t = h * 60 + m;
-    // 9:00-19:30
-    return (t >= 540 && t < 1170);
+    // 9:00-20:00
+    return (t >= 540 && t < 1200);
   }
 
   async function isDuplicate(contact) {
@@ -89,6 +89,20 @@ export function createQueue(config, { dryRun = false } = {}) {
     writeFileSync(CONTACTED_PATH, JSON.stringify(contacted, null, 2) + '\n');
   }
 
+  function checkWacliHealth() {
+    return new Promise((resolve) => {
+      execFile('wacli', ['doctor'], { timeout: 10000 }, (err, stdout) => {
+        if (err) {
+          resolve({ ok: false, reason: err.message });
+        } else {
+          const output = (stdout || '').toLowerCase();
+          const connected = output.includes('connected') || output.includes('ok');
+          resolve({ ok: connected, reason: connected ? '' : 'wacli not connected' });
+        }
+      });
+    });
+  }
+
   function sendViaWacli(phone, message) {
     return new Promise((resolve, reject) => {
       execFile('wacli', ['send', 'text', '--to', `34${phone}`, '--message', message], (err, stdout, stderr) => {
@@ -122,6 +136,15 @@ export function createQueue(config, { dryRun = false } = {}) {
         log(`Queue [DRY RUN]: would send to 34${contact.phone}`);
         await saveContact(contact, 'dry_run', message);
       } else {
+        // Check wacli health before sending
+        const health = await checkWacliHealth();
+        if (!health.ok) {
+          log(`Queue: wacli not healthy (${health.reason}) — pausing queue`);
+          items.unshift(contact); // put it back at the front
+          paused = true;
+          processing = false;
+          return;
+        }
         await sendViaWacli(contact.phone, message);
         log(`Queue: sent to 34${contact.phone}`);
         await saveContact(contact, 'sent', message);
