@@ -18,7 +18,11 @@ fi
 case "${1:-help}" in
   start)
     RUN_NOW=false
-    [[ "${2}" == "--run" || "${3}" == "--run" ]] && RUN_NOW=true
+    EMAILS=1
+    for arg in "${@:2}"; do
+      [[ "$arg" == "--run" ]] && RUN_NOW=true
+      [[ "$arg" =~ ^--emails=([0-9]+)$ ]] && EMAILS="${BASH_REMATCH[1]}"
+    done
     echo "Iniciando AI PropHunt..."
     PLIST="$HOME/Library/LaunchAgents/com.prophunt.server.plist"
     if [[ -f "$PLIST" ]]; then
@@ -40,7 +44,9 @@ case "${1:-help}" in
       echo "Ejecutando pipeline..."
       curl -s -X POST http://localhost:3456/api/run-betterplace \
         -H "Content-Type: application/json" \
-        -d '{}' >/dev/null && echo "Pipeline iniciado"
+        -d "{\"emails\": $EMAILS}" >/dev/null && echo "Pipeline iniciado. Mostrando logs (Ctrl+C para salir):"
+      echo "────────────────────────────────────────"
+      tail -f "$INSTALL_DIR/data/logs/server.log"
     fi
     ;;
   stop)
@@ -142,7 +148,7 @@ EOF
     ;;
   *)
     echo ""
-    echo "  prophunt start [--run]    Iniciar servidor (--run ejecuta el pipeline inmediatamente)"
+    echo "  prophunt start [--run] [--emails=N]    Iniciar servidor (--run ejecuta pipeline; --emails=N lee los N últimos emails)"
     echo "  prophunt stop             Parar servidor"
     echo "  prophunt status           Ver estado"
     echo "  prophunt dashboard        Abrir panel web"

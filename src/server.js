@@ -477,6 +477,7 @@ async function handleBrowserActionDone(req, res) {
   if (state === 'CLICKING_WAITING' && body.action === 'click') {
     if (body.ok && body.dom) {
       // Extension sent DOM along with click result — process directly
+      pipelineLog(`Post-click DOM preview: ${body.dom.slice(0, 400).replace(/\n/g, ' ')}`);
       pipeline.state = 'PROCESSING';
       try {
         await processPhoneResult(body.dom);
@@ -543,9 +544,11 @@ async function handleRunBetterplace(req, res) {
     results: [],
     _pendingClickHint: null,
     _phoneOverride: body.phone_override || null,
+    _emailCount: Math.max(1, parseInt(body.emails) || 1),
   };
 
   if (pipeline._phoneOverride) pipelineLog(`TEST MODE: phone override → ${pipeline._phoneOverride}`);
+  if (pipeline._emailCount > 1) pipelineLog(`Reading last ${pipeline._emailCount} emails`);
   json(res, 200, { ok: true, message: 'Pipeline started' });
 
   // Try gogcli first — if available, read Gmail directly without Chrome extension
@@ -571,12 +574,14 @@ async function handleRunBetterplace(req, res) {
 }
 
 async function fetchEmailsWithGog() {
-  // Search for BetterPlace emails from today — gog returns tabular output (not JSON)
+  // Search for BetterPlace emails — gog returns tabular output (not JSON)
   // Format: ID  DATE  FROM  SUBJECT  LABELS  THREAD
+  const emailCount = pipeline._emailCount || 1;
+  const daysBack = emailCount === 1 ? '1d' : `${emailCount * 7}d`; // wider window to find N emails
   let searchOutput;
   try {
     searchOutput = execSync(
-      `gog gmail search 'from:alertas@betterplaceapp.com newer_than:1d'`,
+      `gog gmail search 'from:alertas@betterplaceapp.com newer_than:${daysBack}'`,
       { encoding: 'utf-8', timeout: 30000 }
     );
   } catch (err) {
@@ -584,18 +589,20 @@ async function fetchEmailsWithGog() {
   }
 
   // Parse IDs from tabular output (skip header line, take first column)
-  const ids = searchOutput.trim().split('\n')
+  let ids = searchOutput.trim().split('\n')
     .slice(1) // skip header row
     .map(line => line.trim().split(/\s+/)[0])
-    .filter(id => id && /^[0-9a-f]{16,}$/i.test(id));
+    .filter(id => id && /^[0-9a-f]{16,}$/i.test(id))
+    .slice(0, emailCount); // take only the N most recent
 
   if (ids.length === 0) {
-    pipelineLog('gogcli: no BetterPlace emails found today — done');
+    pipelineLog('gogcli: no BetterPlace emails found — done');
     pipeline.state = 'DONE';
     return;
   }
 
-  pipelineLog(`gogcli: found ${ids.length} BetterPlace email(s)`);
+  pipelineLog(`gogcli: processing ${ids.length} of last ${emailCount} requested email(s)`);
+
 
   const allProperties = [];
   for (const id of ids) {
@@ -1144,7 +1151,7 @@ function saveSeenEmailIds(set) {
 function startScheduler() {
   const schedule = config.schedule || {};
   const runTime = schedule.run_time || '09:00';
-  const endTime = '19:30';
+  const endTime = '20:00';
   const tz = schedule.timezone || 'Europe/Madrid';
   const workingDays = schedule.working_days || [1, 2, 3, 4, 5];
   const pollMinutes = schedule.betterplace_polling_minutes || 30;
@@ -1179,7 +1186,7 @@ function startScheduler() {
   const seenEmailIds = loadSeenEmailIds();
   if (seenEmailIds.size > 0) log(`Email watcher: loaded ${seenEmailIds.size} previously seen email ID(s)`);
 
-  setInterval(() => {
+  function checkForNewEmails() {
     const now = new Date();
     const madridNow = new Date(now.toLocaleString('en-US', { timeZone: tz }));
     const hhmm = madridNow.toTimeString().slice(0, 5);
@@ -1216,7 +1223,15 @@ function startScheduler() {
     } catch (err) {
       log(`Email watcher: ${err.message}`);
     }
-  }, pollMinutes * 60 * 1000);
+  }
+
+  // Immediate check on startup (after 5s delay to let server finish binding)
+  setTimeout(() => {
+    log('Email watcher: running initial check on startup');
+    checkForNewEmails();
+  }, 5000);
+
+  setInterval(checkForNewEmails, pollMinutes * 60 * 1000);
   } // end watch mode
 }
 

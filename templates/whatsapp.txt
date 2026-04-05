@@ -1,4 +1,4 @@
-Hola {{nombre}}, soy Juanan Gomis agente Api profesional y asociado a REMAX EXPERIENCE
+Hola {{nombre}}, soy Paola Sanz, API inmobiliario de Casiara Real Estate
 
 He visto tu {{tipo}} en {{zona}} que tienes en {{portal}} por {{precio}}. {{detalle}}
 
@@ -6,6 +6,6 @@ No te escribo para convencerte de trabajar con una agencia 🙂
 
 Solo comentarte algo: vender por tu cuenta es totalmente posible, pero vender bien, en menos tiempo y sin tener que bajar el precio es lo complicado.
 
-En REMAX trabajamos con una red de 21 oficinas en Palma y más de 170 agentes, además de una inversión fuerte en marketing digital para llegar al comprador adecuado.
+En Casiara Real Estate trabajamos para conectar tu propiedad con el comprador adecuado, con una atención personalizada y una estrategia de marketing enfocada en resultados.
 
 Si algún día te apetece ver cómo lo trabajaríamos y luego decides si te aporta valor o no, llámame y lo vemos sin ningún compromiso.
